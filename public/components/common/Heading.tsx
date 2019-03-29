@@ -1,21 +1,24 @@
 import "./Heading.scss";
 
-import * as React from "react";
+import React from "react";
 import { classSet } from "@fider/services";
+import { IconType } from "react-icons";
 
 interface HeadingLogo {
   title: string;
   dividing?: boolean;
   size?: "normal" | "small";
-  icon?: string;
+  icon?: IconType;
   subtitle?: string;
   className?: string;
 }
 
+const Header: React.StatelessComponent<{ level: number; className: string }> = props =>
+  React.createElement(`h${props.level}`, { className: props.className }, props.children);
+
 export const Heading = (props: HeadingLogo) => {
   const size = props.size || "normal";
   const level = size === "normal" ? 2 : 3;
-  const Tag = `h${level}`;
   const className = classSet({
     "c-heading": true,
     "m-dividing": props.dividing || false,
@@ -25,18 +28,18 @@ export const Heading = (props: HeadingLogo) => {
 
   const iconClassName = classSet({
     "c-heading-icon": true,
-    circular: level <= 2,
-    [props.icon!]: props.icon,
-    icon: true
+    circular: level <= 2
   });
 
+  const icon = props.icon && <div className={iconClassName}>{React.createElement(props.icon)}</div>;
+
   return (
-    <Tag className={className}>
-      {props.icon && <i className={iconClassName} />}
+    <Header level={level} className={className}>
+      {icon}
       <div className="c-heading-content">
         {props.title}
         <div className="c-heading-subtitle">{props.subtitle}</div>
       </div>
-    </Tag>
+    </Header>
   );
 };

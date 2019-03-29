@@ -1,5 +1,5 @@
 import { http, Result, querystring } from "@fider/services";
-import { Post } from "@fider/models";
+import { Post, Vote, ImageUpload } from "@fider/models";
 
 export const getAllPosts = async (): Promise<Result<Post[]>> => {
   return await http.get<Post[]>("/api/v1/posts");
@@ -7,7 +7,7 @@ export const getAllPosts = async (): Promise<Result<Post[]>> => {
 
 export interface SearchPostsParams {
   query?: string;
-  filter?: string;
+  view?: string;
   limit?: number;
   tags?: string[];
 }
@@ -15,10 +15,10 @@ export interface SearchPostsParams {
 export const searchPosts = async (params: SearchPostsParams): Promise<Result<Post[]>> => {
   return await http.get<Post[]>(
     `/api/v1/posts${querystring.stringify({
-      t: params.tags,
-      q: params.query,
-      f: params.filter,
-      l: params.limit
+      tags: params.tags,
+      query: params.query,
+      view: params.view,
+      limit: params.limit
     })}`
   );
 };
@@ -47,18 +47,37 @@ export const unsubscribe = async (postNumber: number): Promise<Result> => {
   return http.delete(`/api/v1/posts/${postNumber}/subscription`).then(http.event("post", "unsubscribe"));
 };
 
-export const createComment = async (postNumber: number, content: string): Promise<Result> => {
-  return http.post(`/api/v1/posts/${postNumber}/comments`, { content }).then(http.event("comment", "create"));
+export const listVotes = async (postNumber: number): Promise<Result<Vote[]>> => {
+  return http.get<Vote[]>(`/api/v1/posts/${postNumber}/votes`);
 };
 
-export const updateComment = async (postNumber: number, commentID: number, content: string): Promise<Result> => {
+export const createComment = async (
+  postNumber: number,
+  content: string,
+  attachments: ImageUpload[]
+): Promise<Result> => {
   return http
-    .put(`/api/v1/posts/${postNumber}/comments/${commentID}`, { content })
+    .post(`/api/v1/posts/${postNumber}/comments`, { content, attachments })
+    .then(http.event("comment", "create"));
+};
+
+export const updateComment = async (
+  postNumber: number,
+  commentID: number,
+  content: string,
+  attachments: ImageUpload[]
+): Promise<Result> => {
+  return http
+    .put(`/api/v1/posts/${postNumber}/comments/${commentID}`, { content, attachments })
     .then(http.event("comment", "update"));
 };
 
+export const deleteComment = async (postNumber: number, commentID: number): Promise<Result> => {
+  return http.delete(`/api/v1/posts/${postNumber}/comments/${commentID}`).then(http.event("comment", "delete"));
+};
+
 interface SetResponseInput {
-  status: number;
+  status: string;
   text: string;
   originalNumber: number;
 }
@@ -73,10 +92,30 @@ export const respond = async (postNumber: number, input: SetResponseInput): Prom
     .then(http.event("post", "respond"));
 };
 
-export const createPost = async (title: string, description: string): Promise<Result<Post>> => {
-  return http.post<Post>(`/api/v1/posts`, { title, description }).then(http.event("post", "create"));
+interface CreatePostResponse {
+  id: number;
+  number: number;
+  title: string;
+  slug: string;
+}
+
+export const createPost = async (
+  title: string,
+  description: string,
+  attachments: ImageUpload[]
+): Promise<Result<CreatePostResponse>> => {
+  return http
+    .post<CreatePostResponse>(`/api/v1/posts`, { title, description, attachments })
+    .then(http.event("post", "create"));
 };
 
-export const updatePost = async (postNumber: number, title: string, description: string): Promise<Result> => {
-  return http.put(`/api/v1/posts/${postNumber}`, { title, description }).then(http.event("post", "update"));
+export const updatePost = async (
+  postNumber: number,
+  title: string,
+  description: string,
+  attachments: ImageUpload[]
+): Promise<Result> => {
+  return http
+    .put(`/api/v1/posts/${postNumber}`, { title, description, attachments })
+    .then(http.event("post", "update"));
 };

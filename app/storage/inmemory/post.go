@@ -61,7 +61,7 @@ func (s *PostStorage) Update(post *models.Post, title, description string) (*mod
 // GetByNumber returns post by tenant and number
 func (s *PostStorage) GetByNumber(number int) (*models.Post, error) {
 	for _, post := range s.posts {
-		if post.Number == number {
+		if post.Number == number && post.Status != models.PostDeleted {
 			return post, nil
 		}
 	}
@@ -71,7 +71,7 @@ func (s *PostStorage) GetByNumber(number int) (*models.Post, error) {
 // GetBySlug returns post by tenant and slug
 func (s *PostStorage) GetBySlug(slug string) (*models.Post, error) {
 	for _, post := range s.posts {
-		if post.Slug == slug {
+		if post.Slug == slug && post.Status != models.PostDeleted {
 			return post, nil
 		}
 	}
@@ -84,12 +84,12 @@ func (s *PostStorage) GetAll() ([]*models.Post, error) {
 }
 
 // CountPerStatus returns total number of posts per status
-func (s *PostStorage) CountPerStatus() (map[int]int, error) {
-	return make(map[int]int, 0), nil
+func (s *PostStorage) CountPerStatus() (map[models.PostStatus]int, error) {
+	return make(map[models.PostStatus]int, 0), nil
 }
 
 // Search existing posts based on input
-func (s *PostStorage) Search(query, filter, limit string, tags []string) ([]*models.Post, error) {
+func (s *PostStorage) Search(query, view, limit string, tags []string) ([]*models.Post, error) {
 	return s.posts, nil
 }
 
@@ -121,11 +121,26 @@ func (s *PostStorage) AddComment(post *models.Post, content string) (int, error)
 	s.postComments[post.ID] = append(s.postComments[post.ID], &models.Comment{
 		ID:        s.lastCommentID,
 		Content:   content,
-		CreatedOn: time.Now(),
+		CreatedAt: time.Now(),
 		User:      s.user,
 	})
 
 	return s.lastCommentID, nil
+}
+
+// DeleteComment by its id
+func (s *PostStorage) DeleteComment(id int) error {
+	for _, p := range s.posts {
+		if comments, ok := s.postComments[p.ID]; ok {
+			for idx, comment := range comments {
+				if comment.ID == id {
+					s.postComments[p.ID] = append(comments[:idx], comments[idx+1:]...)
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 // GetCommentByID returns a comment by given ID
@@ -148,7 +163,7 @@ func (s *PostStorage) UpdateComment(id int, content string) error {
 		return err
 	}
 	comment.Content = content
-	comment.EditedOn = &now
+	comment.EditedAt = &now
 	comment.EditedBy = s.user
 	return nil
 }
@@ -156,7 +171,7 @@ func (s *PostStorage) UpdateComment(id int, content string) error {
 // AddVote adds user to post list of votes
 func (s *PostStorage) AddVote(post *models.Post, user *models.User) error {
 	s.postsVotedBy[user.ID] = append(s.postsVotedBy[user.ID], post.ID)
-	post.TotalVotes = post.TotalVotes + 1
+	post.VotesCount = post.VotesCount + 1
 	return nil
 }
 
@@ -168,23 +183,19 @@ func (s *PostStorage) RemoveVote(post *models.Post, user *models.User) error {
 			break
 		}
 	}
-	post.TotalVotes = post.TotalVotes - 1
+	post.VotesCount = post.VotesCount - 1
 	return nil
 }
 
 // SetResponse changes current post response
-func (s *PostStorage) SetResponse(post *models.Post, text string, status int) error {
-	for i, storedPost := range s.posts {
+func (s *PostStorage) SetResponse(post *models.Post, text string, status models.PostStatus) error {
+	for _, storedPost := range s.posts {
 		if storedPost.Number == post.Number {
-			if status == models.PostDeleted {
-				s.posts = append(s.posts[:i], s.posts[i+1:]...)
-			} else {
-				storedPost.Status = status
-				storedPost.Response = &models.PostResponse{
-					Text:        text,
-					User:        s.user,
-					RespondedOn: time.Now(),
-				}
+			storedPost.Status = status
+			storedPost.Response = &models.PostResponse{
+				Text:        text,
+				User:        s.user,
+				RespondedAt: time.Now(),
 			}
 		}
 	}
@@ -203,7 +214,7 @@ func (s *PostStorage) MarkAsDuplicate(post *models.Post, original *models.Post) 
 		},
 		Text:        "",
 		User:        s.user,
-		RespondedOn: time.Now(),
+		RespondedAt: time.Now(),
 	}
 	return nil
 }
@@ -221,6 +232,11 @@ func (s *PostStorage) IsReferenced(post *models.Post) (bool, error) {
 // VotedBy returns a list of Post ID voted by given user
 func (s *PostStorage) VotedBy() ([]int, error) {
 	return s.postsVotedBy[s.user.ID], nil
+}
+
+// ListVotes returns a list of all votes on given post
+func (s *PostStorage) ListVotes(post *models.Post, limit int) ([]*models.Vote, error) {
+	return make([]*models.Vote, 0), nil
 }
 
 // AddSubscriber adds user to the post list of subscribers
@@ -242,10 +258,17 @@ func (s *PostStorage) RemoveSubscriber(post *models.Post, user *models.User) err
 
 // GetActiveSubscribers based on input and settings
 func (s *PostStorage) GetActiveSubscribers(number int, channel models.NotificationChannel, event models.NotificationEvent) ([]*models.User, error) {
-	post, err := s.GetByNumber(number)
-	if err != nil {
-		return nil, err
+	var post *models.Post
+	for _, p := range s.posts {
+		if p.Number == number {
+			post = p
+		}
 	}
+
+	if post == nil {
+		return nil, app.ErrNotFound
+	}
+
 	subscribers, ok := s.postSubscribers[post.ID]
 	if ok {
 		users := make([]*models.User, len(subscribers))
@@ -255,4 +278,14 @@ func (s *PostStorage) GetActiveSubscribers(number int, channel models.Notificati
 		return users, nil
 	}
 	return make([]*models.User, 0), nil
+}
+
+// GetAttachments for given post or comment
+func (s *PostStorage) GetAttachments(post *models.Post, comment *models.Comment) ([]string, error) {
+	return make([]string, 0), nil
+}
+
+// SetAttachments on given post or comment
+func (s *PostStorage) SetAttachments(post *models.Post, comment *models.Comment, attachments []*models.ImageUpload) error {
+	return nil
 }

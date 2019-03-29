@@ -1,13 +1,13 @@
 import "./Toggle.scss";
 
-import * as React from "react";
+import React from "react";
 import { classSet } from "@fider/services";
 
 interface ToggleProps {
   label?: string;
   active: boolean;
   disabled?: boolean;
-  onToggle?: (active: boolean) => Promise<any>;
+  onToggle?: (active: boolean) => void;
 }
 
 interface ToggleState {

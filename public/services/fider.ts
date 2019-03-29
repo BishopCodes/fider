@@ -1,14 +1,21 @@
+import { createContext } from "react";
 import { CurrentUser, SystemSettings, Tenant } from "@fider/models";
 
 export class FiderSession {
+  private pContextID: string;
   private pTenant: Tenant;
   private pUser: CurrentUser | undefined;
   private pProps: { [key: string]: any } = {};
 
-  constructor() {
-    this.pProps = window.__props;
-    this.pUser = window.__user;
-    this.pTenant = window.__tenant;
+  constructor(data: any) {
+    this.pContextID = data.contextID;
+    this.pProps = data.props;
+    this.pUser = data.user;
+    this.pTenant = data.tenant;
+  }
+
+  public get contextID(): string {
+    return this.pContextID;
   }
 
   public get user(): CurrentUser {
@@ -33,8 +40,10 @@ export class FiderImpl {
   private pSession!: FiderSession;
 
   public initialize = (): FiderImpl => {
-    this.pSettings = window.__settings;
-    this.pSession = new FiderSession();
+    const el = document.getElementById("server-data");
+    const data = el ? JSON.parse(el.textContent || el.innerText) : {};
+    this.pSettings = data.settings;
+    this.pSession = new FiderSession(data);
     return this;
   };
 
@@ -44,6 +53,10 @@ export class FiderImpl {
 
   public get settings(): SystemSettings {
     return this.pSettings;
+  }
+
+  public isBillingEnabled(): boolean {
+    return !!this.pSettings.stripePublicKey;
   }
 
   public isProduction(): boolean {
@@ -56,3 +69,5 @@ export class FiderImpl {
 }
 
 export let Fider = new FiderImpl();
+
+export const FiderContext = createContext<FiderImpl>(Fider);

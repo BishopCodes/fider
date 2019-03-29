@@ -6,6 +6,7 @@ import (
 	stdLog "log"
 	"net/http"
 	"os"
+	"path"
 	"runtime"
 	"strconv"
 	"time"
@@ -19,21 +20,23 @@ import (
 	"github.com/getfider/fider/app/pkg/rand"
 	"github.com/getfider/fider/app/pkg/worker"
 	"github.com/julienschmidt/httprouter"
+	cache "github.com/patrickmn/go-cache"
 )
 
 var (
 	cspBase    = "base-uri 'self'"
 	cspDefault = "default-src 'self'"
 	cspStyle   = "style-src 'self' 'nonce-%[1]s' https://fonts.googleapis.com %[2]s"
-	cspScript  = "script-src 'self' 'nonce-%[1]s' https://cdn.polyfill.io https://www.google-analytics.com %[2]s"
+	cspScript  = "script-src 'self' 'nonce-%[1]s' https://cdn.polyfill.io https://js.stripe.com https://www.google-analytics.com %[2]s"
 	cspFont    = "font-src 'self' https://fonts.gstatic.com data: %[2]s"
 	cspImage   = "img-src 'self' https: data: %[2]s"
 	cspObject  = "object-src 'none'"
+	cspFrame   = "frame-src 'self' https://js.stripe.com"
 	cspMedia   = "media-src 'none'"
-	cspConnect = "connect-src 'self' https://www.google-analytics.com"
+	cspConnect = "connect-src 'self' https://www.google-analytics.com https://ipinfo.io https://js.stripe.com %[2]s"
 
 	//CspPolicyTemplate is the template used to generate the policy
-	CspPolicyTemplate = fmt.Sprintf("%s; %s; %s; %s; %s; %s; %s; %s; %s", cspBase, cspDefault, cspStyle, cspScript, cspImage, cspFont, cspObject, cspMedia, cspConnect)
+	CspPolicyTemplate = fmt.Sprintf("%s; %s; %s; %s; %s; %s; %s; %s; %s; %s", cspBase, cspDefault, cspStyle, cspScript, cspImage, cspFont, cspObject, cspMedia, cspConnect, cspFrame)
 )
 
 type notFoundHandler struct {
@@ -62,6 +65,7 @@ type Engine struct {
 	middlewares []MiddlewareFunc
 	worker      worker.Worker
 	server      *http.Server
+	cache       *cache.Cache
 }
 
 //New creates a new Engine
@@ -81,6 +85,7 @@ func New(settings *models.SystemSettings) *Engine {
 		binder:      NewDefaultBinder(),
 		middlewares: make([]MiddlewareFunc, 0),
 		worker:      worker.New(db, bgLogger),
+		cache:       cache.New(5*time.Minute, 10*time.Minute),
 	}
 
 	return router
@@ -90,15 +95,18 @@ func New(settings *models.SystemSettings) *Engine {
 func (e *Engine) Start(address string) {
 	e.logger.Info("Application is starting")
 	e.logger.Infof("GO_ENV: @{Env}", log.Props{
-		"Env": env.Current(),
+		"Env": env.Config.Environment,
 	})
 
-	certFile := env.GetEnvOrDefault("SSL_CERT", "")
-	keyFile := env.GetEnvOrDefault("SSL_CERT_KEY", "")
-	autoSSL := env.GetEnvOrDefault("SSL_AUTO", "")
+	var (
+		certFilePath = ""
+		keyFilePath  = ""
+	)
 
-	certFilePath := env.Etc(certFile)
-	keyFilePath := env.Etc(keyFile)
+	if env.Config.SSLCert != "" {
+		certFilePath = env.Etc(env.Config.SSLCert)
+		keyFilePath = env.Etc(env.Config.SSLCertKey)
+	}
 
 	e.server = &http.Server{
 		ReadTimeout:  5 * time.Second,
@@ -118,8 +126,8 @@ func (e *Engine) Start(address string) {
 		err         error
 		certManager *CertificateManager
 	)
-	if autoSSL == "true" {
-		certManager, err = NewCertificateManager(certFilePath, keyFilePath, env.Etc("certs"))
+	if env.Config.AutoSSL {
+		certManager, err = NewCertificateManager(certFilePath, keyFilePath, e.db)
 		if err != nil {
 			panic(errors.Wrap(err, "failed to initialize CertificateManager"))
 		}
@@ -128,7 +136,7 @@ func (e *Engine) Start(address string) {
 		e.logger.Infof("https (auto ssl) server started on @{Address}", log.Props{"Address": address})
 		go certManager.StartHTTPServer()
 		err = e.server.ListenAndServeTLS("", "")
-	} else if certFile == "" && keyFile == "" {
+	} else if certFilePath == "" && keyFilePath == "" {
 		e.logger.Infof("http server started on @{Address}", log.Props{"Address": address})
 		err = e.server.ListenAndServe()
 	} else {
@@ -190,7 +198,12 @@ func (e *Engine) Database() *dbx.Database {
 	return e.db
 }
 
-//Worker returns current worker referenc
+//Cache returns current cache
+func (e *Engine) Cache() *cache.Cache {
+	return e.cache
+}
+
+//Worker returns current worker reference
 func (e *Engine) Worker() worker.Worker {
 	return e.worker
 }
@@ -303,10 +316,10 @@ func (g *Group) Static(prefix, root string) {
 	var h HandlerFunc
 	if fi.IsDir() {
 		h = func(c Context) error {
-			path := root + c.Param("filepath")
-			fi, err := os.Stat(path)
+			filePath := path.Join(root, c.Param("filepath"))
+			fi, err := os.Stat(filePath)
 			if err == nil && !fi.IsDir() {
-				http.ServeFile(c.Response, c.Request.instance, path)
+				http.ServeFile(c.Response, c.Request.instance, filePath)
 				return nil
 			}
 			return c.NotFound()

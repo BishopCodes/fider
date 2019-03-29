@@ -1,14 +1,13 @@
 import "./Modal.scss";
 
-import * as React from "react";
-import * as ReactDOM from "react-dom";
-import { SystemSettings, CurrentUser, Tenant } from "@fider/models";
-import { SignInControl, EnvironmentInfo, Gravatar } from "@fider/components/common";
-import { actions, classSet } from "@fider/services";
+import React from "react";
+import ReactDOM from "react-dom";
+import { classSet } from "@fider/services";
 
 interface ModalWindowProps {
+  className?: string;
   isOpen: boolean;
-  size?: "small" | "large";
+  size?: "small" | "large" | "fluid";
   canClose?: boolean;
   center?: boolean;
   onClose?: () => void;
@@ -57,9 +56,6 @@ class ModalWindow extends React.Component<ModalWindowProps, ModalWindowState> {
     if (event.keyCode === 27) {
       // ESC
       this.close();
-    } else if (event.keyCode === 9) {
-      // TAB
-      event.preventDefault();
     }
   };
 
@@ -93,6 +89,7 @@ class ModalWindow extends React.Component<ModalWindowProps, ModalWindowState> {
 
     const className = classSet({
       "c-modal-window": true,
+      [`${this.props.className}`]: !!this.props.className,
       "m-center": this.props.center,
       [`m-${this.props.size}`]: true
     });

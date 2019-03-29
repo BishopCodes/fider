@@ -1,6 +1,6 @@
-import * as React from "react";
+import React from "react";
 
-import { CurrentUser, UserSettings } from "@fider/models";
+import { UserSettings } from "@fider/models";
 import { Toggle, Segment, Segments, Field } from "@fider/components";
 import { Fider } from "@fider/services";
 
@@ -33,7 +33,7 @@ export class NotificationSettings extends React.Component<NotificationSettingsPr
     return false;
   }
 
-  private toggle(settingsKey: string, channel: Channel) {
+  private async toggle(settingsKey: string, channel: Channel) {
     const userSettings = { ...this.state.userSettings };
     userSettings[settingsKey] = (parseInt(this.state.userSettings[settingsKey], 10) ^ channel).toString();
 

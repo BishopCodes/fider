@@ -1,4 +1,4 @@
-import * as puppeteer from "puppeteer";
+import puppeteer from "puppeteer";
 import { BrowserTab } from ".";
 
 export class Browser {
@@ -11,7 +11,8 @@ export class Browser {
   public static async launch(): Promise<Browser> {
     const browser = await puppeteer.launch({
       headless: true,
-      devtools: false
+      devtools: false,
+      ignoreHTTPSErrors: true
     });
     return new Browser(browser);
   }

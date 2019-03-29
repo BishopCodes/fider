@@ -9,11 +9,13 @@ import (
 // Index is the default home page
 func Index() web.HandlerFunc {
 	return func(c web.Context) error {
+		c.SetCanonicalURL("")
+
 		posts, err := c.Services().Posts.Search(
-			c.QueryParam("q"),
-			c.QueryParam("f"),
-			c.QueryParam("l"),
-			c.QueryParamAsArray("t"),
+			c.QueryParam("query"),
+			c.QueryParam("view"),
+			c.QueryParam("limit"),
+			c.QueryParamAsArray("tags"),
 		)
 		if err != nil {
 			return c.Failure(err)
@@ -38,6 +40,7 @@ func Index() web.HandlerFunc {
 
 		return c.Page(web.Props{
 			Description: description,
+			ChunkName:   "Home.page",
 			Data: web.Map{
 				"posts":          posts,
 				"tags":           tags,
@@ -52,7 +55,7 @@ func PostDetails() web.HandlerFunc {
 	return func(c web.Context) error {
 		number, err := c.ParamAsInt("number")
 		if err != nil {
-			return c.Failure(err)
+			return c.NotFound()
 		}
 
 		posts := c.Services().Posts
@@ -76,14 +79,27 @@ func PostDetails() web.HandlerFunc {
 			return c.Failure(err)
 		}
 
+		votes, err := c.Services().Posts.ListVotes(post, 6)
+		if err != nil {
+			return c.Failure(err)
+		}
+
+		attachments, err := c.Services().Posts.GetAttachments(post, nil)
+		if err != nil {
+			return c.Failure(err)
+		}
+
 		return c.Page(web.Props{
 			Title:       post.Title,
 			Description: markdown.PlainText(post.Description),
+			ChunkName:   "ShowPost.page",
 			Data: web.Map{
-				"comments":   comments,
-				"subscribed": subscribed,
-				"post":       post,
-				"tags":       tags,
+				"comments":    comments,
+				"subscribed":  subscribed,
+				"post":        post,
+				"tags":        tags,
+				"votes":       votes,
+				"attachments": attachments,
 			},
 		})
 	}

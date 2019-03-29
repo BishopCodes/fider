@@ -1,6 +1,6 @@
 import "./SideMenu.scss";
 
-import * as React from "react";
+import React from "react";
 import { classSet, Fider } from "@fider/services";
 import { FiderVersion } from "@fider/components";
 
@@ -63,7 +63,12 @@ export const SideMenu = (props: SiteMenuProps) => {
         />
         <SideMenuItem name="advanced" title="Advanced" href="/admin/advanced" isActive={activeItem === "advanced"} />
         {Fider.session.user.isAdministrator && (
-          <SideMenuItem name="export" title="Export" href="/admin/export" isActive={activeItem === "export"} />
+          <>
+            {Fider.isBillingEnabled() && !!Fider.session.tenant.billing && (
+              <SideMenuItem name="billing" title="Billing" href="/admin/billing" isActive={activeItem === "billing"} />
+            )}
+            <SideMenuItem name="export" title="Export" href="/admin/export" isActive={activeItem === "export"} />
+          </>
         )}
       </div>
       <FiderVersion />

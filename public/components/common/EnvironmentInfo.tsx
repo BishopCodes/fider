@@ -1,17 +1,19 @@
-import * as React from "react";
-import { Fider } from "@fider/services";
+import React from "react";
+import { useFider } from "@fider/hooks";
 
-export class EnvironmentInfo extends React.Component<{}, {}> {
-  public render() {
-    if (Fider.isProduction()) {
-      return null;
-    }
+export const EnvironmentInfo = () => {
+  const fider = useFider();
 
-    return (
-      <div className="c-env-info">
-        Env: {Fider.settings.environment} | Compiler: {Fider.settings.compiler} | Version: {Fider.settings.version} |
-        BuildTime: {Fider.settings.buildTime}
-      </div>
-    );
+  if (fider.isProduction()) {
+    return null;
   }
-}
+
+  return (
+    <div className="c-env-info">
+      Env: {fider.settings.environment} | Compiler: {fider.settings.compiler} | Version: {fider.settings.version} |
+      BuildTime: {fider.settings.buildTime || "N/A"} |
+      {!fider.isSingleHostMode() && `TenantID: ${fider.session.tenant.id}`} |{" "}
+      {fider.session.isAuthenticated && `UserID: ${fider.session.user.id}`}
+    </div>
+  );
+};

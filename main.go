@@ -10,26 +10,28 @@ import (
 	_ "github.com/lib/pq"
 )
 
-// replaced during CI build
-var buildtime = ""
-var buildnumber = "local"
+var (
+	// replaced during CI build
+	buildtime   = ""
+	buildnumber = "local"
 
-// Use this for non-stable releases
-// var version = "x.y.z-" + buildnumber
+	// Use this for non-stable releases
+	// version = "x.y.z-" + buildnumber
 
-// Use this for stable releases
-// var version = "x.y.z"
+	// Use this for stable releases
+	// version = "x.y.z"
 
-var version = "0.16.0-" + buildnumber
+	version = "0.19.0-" + buildnumber
+)
 
 func main() {
 	settings := &models.SystemSettings{
 		BuildTime:       buildtime,
 		Version:         version,
 		Compiler:        runtime.Version(),
-		Environment:     env.Current(),
-		GoogleAnalytics: env.GetEnvOrDefault("GOOGLE_ANALYTICS", ""),
-		Mode:            env.Mode(),
+		Environment:     env.Config.Environment,
+		GoogleAnalytics: env.Config.GoogleAnalytics,
+		Mode:            env.Config.HostMode,
 		Domain:          env.MultiTenantDomain(),
 		HasLegal:        env.HasLegal(),
 	}

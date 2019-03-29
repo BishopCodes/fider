@@ -3,9 +3,9 @@ package mailgun_test
 import (
 	"io/ioutil"
 	"net/url"
-	"os"
 	"testing"
 
+	"github.com/getfider/fider/app/pkg/env"
 	"github.com/getfider/fider/app/pkg/worker"
 
 	"github.com/getfider/fider/app/models"
@@ -24,7 +24,7 @@ var sender = mailgun.NewSender(logger, client, "mydomain.com", "mys3cr3tk3y")
 var tenant = &models.Tenant{
 	Subdomain: "got",
 }
-var ctx = worker.NewContext("ID-1", "TaskName", nil, logger)
+var ctx = worker.NewContext("ID-1", worker.Task{Name: "TaskName"}, nil, logger)
 
 func init() {
 	ctx.SetTenant(tenant)
@@ -32,7 +32,7 @@ func init() {
 
 func TestSend_Success(t *testing.T) {
 	RegisterT(t)
-	os.Setenv("HOST_MODE", "MULTI")
+	env.Config.HostMode = "multi"
 	client.Reset()
 
 	to := email.Recipient{
@@ -53,8 +53,8 @@ func TestSend_Success(t *testing.T) {
 	values, err := url.ParseQuery(string(bytes))
 	Expect(err).IsNil()
 	Expect(values).HasLen(6)
-	Expect(values.Get("to")).Equals("Jon Sow <jon.snow@got.com>")
-	Expect(values.Get("from")).Equals("Fider Test <noreply@random.org>")
+	Expect(values.Get("to")).Equals(`"Jon Sow" <jon.snow@got.com>`)
+	Expect(values.Get("from")).Equals(`"Fider Test" <noreply@random.org>`)
 	Expect(values.Get("h:Reply-To")).Equals("noreply@random.org")
 	Expect(values.Get("subject")).Equals("Message to: Hello")
 	Expect(values["o:tag"][0]).Equals("template:echo_test")
@@ -157,9 +157,9 @@ func TestBatch_Success(t *testing.T) {
 	Expect(err).IsNil()
 	Expect(values).HasLen(7)
 	Expect(values["to"]).HasLen(2)
-	Expect(values["to"][0]).Equals("Jon Sow <jon.snow@got.com>")
-	Expect(values["to"][1]).Equals("Arya Stark <arya.start@got.com>")
-	Expect(values.Get("from")).Equals("Fider Test <noreply@random.org>")
+	Expect(values["to"][0]).Equals(`"Jon Sow" <jon.snow@got.com>`)
+	Expect(values["to"][1]).Equals(`"Arya Stark" <arya.start@got.com>`)
+	Expect(values.Get("from")).Equals(`"Fider Test" <noreply@random.org>`)
 	Expect(values.Get("h:Reply-To")).Equals("noreply@random.org")
 	Expect(values.Get("subject")).Equals("Message to: %recipient.name%")
 	Expect(values["o:tag"]).HasLen(2)
@@ -197,4 +197,29 @@ func TestBatch_Success(t *testing.T) {
 		</table>
 	</body>
 </html>`)
+}
+
+func TestGetBaseURL(t *testing.T) {
+	RegisterT(t)
+
+	// Fall back to US if there is nothing set
+	env.Config.Email.Mailgun.Region = ""
+	Expect(sender.GetBaseURL()).Equals("https://api.mailgun.net/v3/mydomain.com/messages")
+	
+	// Return the EU domain for EU, ignore the case
+	env.Config.Email.Mailgun.Region = "EU"
+	Expect(sender.GetBaseURL()).Equals("https://api.eu.mailgun.net/v3/mydomain.com/messages")
+	env.Config.Email.Mailgun.Region = "eu"
+	Expect(sender.GetBaseURL()).Equals("https://api.eu.mailgun.net/v3/mydomain.com/messages")
+
+	// Return the US domain for US, ignore the case
+	env.Config.Email.Mailgun.Region = "US"
+	Expect(sender.GetBaseURL()).Equals("https://api.mailgun.net/v3/mydomain.com/messages")
+	env.Config.Email.Mailgun.Region = "us"
+	Expect(sender.GetBaseURL()).Equals("https://api.mailgun.net/v3/mydomain.com/messages")
+
+    // Return the US domain if the region is invalid
+	env.Config.Email.Mailgun.Region = "Mars"
+	Expect(sender.GetBaseURL()).Equals("https://api.mailgun.net/v3/mydomain.com/messages")
+
 }

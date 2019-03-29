@@ -3,7 +3,6 @@ package mailgun
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strings"
 
@@ -11,27 +10,57 @@ import (
 	"github.com/getfider/fider/app/pkg/env"
 	"github.com/getfider/fider/app/pkg/errors"
 	"github.com/getfider/fider/app/pkg/log"
-	"github.com/getfider/fider/app/pkg/web"
+	"github.com/getfider/fider/app/pkg/web/http"
 )
 
-var baseURL = "https://api.mailgun.net/v3/%s/messages"
+// Known base URLs
+// Should Mailgun add other regions we'll just need to add their URLs here
+// Use upper case keys - incoming env var values are normalized before being used
+var baseURLs = map[string]string{
+	"US" : "https://api.mailgun.net/v3/%s/messages",
+	"EU" : "https://api.eu.mailgun.net/v3/%s/messages",
+}
 
 //Sender is used to send emails
 type Sender struct {
 	logger log.Logger
-	client web.Client
+	client http.Client
 	domain string
 	apiKey string
 }
 
 //NewSender creates a new mailgun email sender
-func NewSender(logger log.Logger, client web.Client, domain, apiKey string) *Sender {
+func NewSender(logger log.Logger, client http.Client, domain, apiKey string) *Sender {
 	return &Sender{logger, client, domain, apiKey}
 }
 
 //Send an email
 func (s *Sender) Send(ctx email.Context, templateName string, params email.Params, from string, to email.Recipient) error {
 	return s.BatchSend(ctx, templateName, params, from, []email.Recipient{to})
+}
+
+// Try getting the base URL of the Mailgun API using Environment vars and the Sender's domain
+// Fall back to the URL for the US region if that fails to maintain compatibility with older installs
+func (s *Sender) GetBaseURL() string {
+	var regionCode = env.Config.Email.Mailgun.Region
+	regionCode = strings.ToUpper(regionCode)
+
+	// Default to the US domain if no region code was provided (ENV not set)
+	// or if the provided code isn't valid
+	if len(regionCode) < 1 {
+		regionCode = "US"
+	} else if len(baseURLs[regionCode]) < 1 {
+		s.logger.Warnf(
+			"Unknown Mailgun region code '@{Code}' configured - falling back to 'US'", 
+			log.Props{
+				"Code": env.Config.Email.Mailgun.Region,
+			},
+		)
+
+		regionCode = "US"
+	}
+
+	return fmt.Sprintf(baseURLs[regionCode], s.domain)
 }
 
 // BatchSend an email to multiple recipients
@@ -54,8 +83,7 @@ func (s *Sender) BatchSend(ctx email.Context, templateName string, params email.
 	}
 
 	form := url.Values{}
-
-	form.Add("from", fmt.Sprintf("%s <%s>", from, email.NoReply))
+	form.Add("from", email.NewRecipient(from, email.NoReply, email.Params{}).String())
 	form.Add("h:Reply-To", email.NoReply)
 	form.Add("subject", message.Subject)
 	form.Add("html", message.Body)
@@ -69,7 +97,7 @@ func (s *Sender) BatchSend(ctx email.Context, templateName string, params email.
 	for _, r := range to {
 		if r.Address != "" {
 			if email.CanSendTo(r.Address) {
-				form.Add("to", fmt.Sprintf("%s <%s>", r.Name, r.Address))
+				form.Add("to", r.String())
 				recipientVariables[r.Address] = r.Params
 			} else {
 				s.logger.Warnf("Skipping email to '@{Name} <@{Address}>'.", log.Props{
@@ -106,8 +134,7 @@ func (s *Sender) BatchSend(ctx email.Context, templateName string, params email.
 		})
 	}
 
-	url := fmt.Sprintf(baseURL, s.domain)
-	request, err := http.NewRequest("POST", url, strings.NewReader(form.Encode()))
+	request, err := http.NewRequest("POST", s.GetBaseURL(), strings.NewReader(form.Encode()))
 	if err != nil {
 		return errors.Wrap(err, "failed to create POST request")
 	}

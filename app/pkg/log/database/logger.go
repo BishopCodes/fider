@@ -20,18 +20,30 @@ type Logger struct {
 	level   log.Level
 	tag     string
 	props   log.Props
+	enabled bool
 }
 
 // NewLogger creates a new Logger
 func NewLogger(tag string, db *dbx.Database) *Logger {
-	level := strings.ToUpper(env.GetEnvOrDefault("LOG_LEVEL", ""))
+	level := strings.ToUpper(env.Config.Log.Level)
 	return &Logger{
 		tag:     tag,
 		db:      db,
 		console: console.NewLogger(tag),
 		level:   log.ParseLevel(level),
 		props:   make(log.Props, 0),
+		enabled: true,
 	}
+}
+
+// Disable logs for this logger
+func (l *Logger) Disable() {
+	l.enabled = false
+}
+
+// Enable logs for this logger
+func (l *Logger) Enable() {
+	l.enabled = true
 }
 
 // SetLevel increases/decreases current log level
@@ -42,7 +54,7 @@ func (l *Logger) SetLevel(level log.Level) {
 
 // IsEnabled returns true if given level is enabled
 func (l *Logger) IsEnabled(level log.Level) bool {
-	return level >= l.level
+	return l.enabled && level >= l.level
 }
 
 // Debug logs a DEBUG message
@@ -121,30 +133,17 @@ func (l *Logger) log(level log.Level, message string, props log.Props) {
 	}
 
 	props = l.props.Merge(props)
-	trx, err := l.db.Begin()
-	if err != nil {
-		l.console.Error(errors.Wrap(err, "failed to open transaction"))
-		return
-	}
-	trx.NoLogs()
-
 	message = log.Parse(message, props, false)
 
-	_, err = trx.Execute(
-		"INSERT INTO logs (tag, level, text, created_on, properties) VALUES ($1, $2, $3, $4, $5)",
+	go l.fireAndForgetLog(level, message, props)
+}
+
+func (l *Logger) fireAndForgetLog(level log.Level, message string, props log.Props) {
+	_, err := l.db.Connection().Exec(
+		"INSERT INTO logs (tag, level, text, created_at, properties) VALUES ($1, $2, $3, $4, $5)",
 		l.tag, level.String(), message, time.Now(), props,
 	)
-
 	if err != nil {
 		l.console.Error(errors.Wrap(err, "failed to insert log"))
-		err = trx.Rollback()
-		if err != nil {
-			l.console.Error(errors.Wrap(err, "failed to rollback transaction"))
-		}
-	} else {
-		err = trx.Commit()
-		if err != nil {
-			l.console.Error(errors.Wrap(err, "failed to commit transaction"))
-		}
 	}
 }

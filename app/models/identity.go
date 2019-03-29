@@ -9,24 +9,36 @@ import (
 
 //Tenant represents a tenant
 type Tenant struct {
-	ID             int    `json:"id"`
-	Name           string `json:"name"`
-	Subdomain      string `json:"subdomain"`
-	Invitation     string `json:"invitation"`
-	WelcomeMessage string `json:"welcomeMessage"`
-	CNAME          string `json:"cname"`
-	Status         int    `json:"-"`
-	IsPrivate      bool   `json:"isPrivate"`
-	LogoID         int    `json:"logoID"`
-	CustomCSS      string `json:"-"`
+	ID             int            `json:"id"`
+	Name           string         `json:"name"`
+	Subdomain      string         `json:"subdomain"`
+	Invitation     string         `json:"invitation"`
+	WelcomeMessage string         `json:"welcomeMessage"`
+	CNAME          string         `json:"cname"`
+	Status         int            `json:"status"`
+	IsPrivate      bool           `json:"isPrivate"`
+	LogoBlobKey    string         `json:"logoBlobKey"`
+	Billing        *TenantBilling `json:"billing,omitempty"`
+	CustomCSS      string         `json:"-"`
 }
 
 var (
 	//TenantActive is the default status for most tenants
 	TenantActive = 1
-	//TenantInactive is used for signup via email that requires user confirmation
-	TenantInactive = 2
+	//TenantPending is used for signup via email that requires user confirmation
+	TenantPending = 2
+	//TenantLocked is used when tenants are locked for various reasons
+	TenantLocked = 3
 )
+
+//TenantBilling has all the billing information of given tenant
+type TenantBilling struct {
+	StripeCustomerID     string
+	StripeSubscriptionID string
+	StripePlanID         string     `json:"stripePlanID"`
+	TrialEndsAt          time.Time  `json:"trialEndsAt"`
+	SubscriptionEndsAt   *time.Time `json:"subscriptionEndsAt,omitempty"`
+}
 
 //Upload represents a file that has been uploaded to Fider
 type Upload struct {
@@ -37,21 +49,92 @@ type Upload struct {
 
 //User represents an user inside our application
 type User struct {
-	ID        int             `json:"id"`
-	Name      string          `json:"name"`
-	Email     string          `json:"-"`
-	Tenant    *Tenant         `json:"-"`
-	Role      Role            `json:"role"`
-	Providers []*UserProvider `json:"-"`
-	Status    int             `json:"-"`
+	ID            int             `json:"id"`
+	Name          string          `json:"name"`
+	Tenant        *Tenant         `json:"-"`
+	Email         string          `json:"-"`
+	Role          Role            `json:"role"`
+	Providers     []*UserProvider `json:"-"`
+	AvatarBlobKey string          `json:"-"`
+	AvatarType    AvatarType      `json:"-"`
+	AvatarURL     string          `json:"avatarURL,omitempty"`
+	Status        UserStatus      `json:"status"`
 }
+
+//AvatarType are the possible types of a user avatar
+type AvatarType int
+
+var (
+	//AvatarTypeLetter is the default avatar type for users
+	AvatarTypeLetter AvatarType = 1
+	//AvatarTypeGravatar fetches avatar from gravatar (if available)
+	AvatarTypeGravatar AvatarType = 2
+	//AvatarTypeCustom uses a user uploaded avatar
+	AvatarTypeCustom AvatarType = 3
+)
+
+var avatarTypesIDs = map[AvatarType]string{
+	AvatarTypeLetter:   "letter",
+	AvatarTypeGravatar: "gravatar",
+	AvatarTypeCustom:   "custom",
+}
+
+var avatarTypesName = map[string]AvatarType{
+	"letter":   AvatarTypeLetter,
+	"gravatar": AvatarTypeGravatar,
+	"custom":   AvatarTypeCustom,
+}
+
+// String returns the string version of the user status
+func (t AvatarType) String() string {
+	return avatarTypesIDs[t]
+}
+
+// MarshalText returns the Text version of the avatar type
+func (t AvatarType) MarshalText() ([]byte, error) {
+	return []byte(avatarTypesIDs[t]), nil
+}
+
+// UnmarshalText parse string into a avatar type
+func (t *AvatarType) UnmarshalText(text []byte) error {
+	*t = avatarTypesName[string(text)]
+	return nil
+}
+
+//UserStatus is the status of a user
+type UserStatus int
 
 var (
 	//UserActive is the default status for users
-	UserActive = 1
+	UserActive UserStatus = 1
 	//UserDeleted is used for users that chose to delete their accounts
-	UserDeleted = 2
+	UserDeleted UserStatus = 2
+	//UserBlocked is used for users that have been blocked by staff members
+	UserBlocked UserStatus = 3
 )
+
+var userStatusIDs = map[UserStatus]string{
+	UserActive:  "active",
+	UserDeleted: "deleted",
+	UserBlocked: "blocked",
+}
+
+var userStatusName = map[string]UserStatus{
+	"active":  UserActive,
+	"deleted": UserDeleted,
+	"blocked": UserBlocked,
+}
+
+// MarshalText returns the Text version of the user status
+func (status UserStatus) MarshalText() ([]byte, error) {
+	return []byte(userStatusIDs[status]), nil
+}
+
+// UnmarshalText parse string into a user status
+func (status *UserStatus) UnmarshalText(text []byte) error {
+	*status = userStatusName[string(text)]
+	return nil
+}
 
 //Role is the role of a user inside a tenant
 type Role int
@@ -64,6 +147,29 @@ const (
 	//RoleAdministrator has full access to administrative console
 	RoleAdministrator Role = 3
 )
+
+var roleIDs = map[Role]string{
+	RoleVisitor:       "visitor",
+	RoleCollaborator:  "collaborator",
+	RoleAdministrator: "administrator",
+}
+
+var roleNames = map[string]Role{
+	"visitor":       RoleVisitor,
+	"collaborator":  RoleCollaborator,
+	"administrator": RoleAdministrator,
+}
+
+// MarshalText returns the Text version of the user role
+func (role Role) MarshalText() ([]byte, error) {
+	return []byte(roleIDs[role]), nil
+}
+
+// UnmarshalText parse string into a user role
+func (role *Role) UnmarshalText(text []byte) error {
+	*role = roleNames[string(text)]
+	return nil
+}
 
 //EmailVerificationKind specifies which kind of process is being verified by email
 type EmailVerificationKind int16
@@ -99,7 +205,7 @@ func (u *User) IsAdministrator() bool {
 	return u.Role == RoleAdministrator
 }
 
-//UserProvider represents the relashionship between an User and an Authentication provide
+//UserProvider represents the relationship between an User and an Authentication provide
 type UserProvider struct {
 	Name string
 	UID  string
@@ -153,12 +259,14 @@ type UpdateTenantAdvancedSettings struct {
 
 //ImageUpload is the input model used to upload/remove an image
 type ImageUpload struct {
-	Upload *ImageUploadData `json:"upload"`
-	Remove bool             `json:"remove"`
+	BlobKey string           `json:"bkey"`
+	Upload  *ImageUploadData `json:"upload"`
+	Remove  bool             `json:"remove"`
 }
 
-//UpdateTenantSettingsLogoUpload is the input model used to uploade a new logo
+//ImageUploadData is the input model used to upload a new logo
 type ImageUploadData struct {
+	FileName    string `json:"fileName"`
 	ContentType string `json:"contentType"`
 	Content     []byte `json:"content"`
 }
@@ -262,9 +370,9 @@ type EmailVerification struct {
 	Key        string
 	UserID     int
 	Kind       EmailVerificationKind
-	CreatedOn  time.Time
-	ExpiresOn  time.Time
-	VerifiedOn *time.Time
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	VerifiedAt *time.Time
 }
 
 // CompleteProfile is the model used to complete user profile during email sign in
@@ -276,8 +384,10 @@ type CompleteProfile struct {
 
 // UpdateUserSettings is the model used to update user's settings
 type UpdateUserSettings struct {
-	Name     string            `json:"name"`
-	Settings map[string]string `json:"settings"`
+	Name       string            `json:"name"`
+	AvatarType AvatarType        `json:"avatarType"`
+	Avatar     *ImageUpload      `json:"avatar"`
+	Settings   map[string]string `json:"settings"`
 }
 
 // CreateUser is the input model to create a new user

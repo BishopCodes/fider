@@ -26,7 +26,7 @@ func TestCreatePostHandler(t *testing.T) {
 	Expect(code).Equals(http.StatusOK)
 	Expect(err).IsNil()
 	Expect(post.Title).Equals("My newest post :)")
-	Expect(post.TotalVotes).Equals(1)
+	Expect(post.VotesCount).Equals(1)
 }
 
 func TestCreatePostHandler_WithoutTitle(t *testing.T) {
@@ -41,6 +41,25 @@ func TestCreatePostHandler_WithoutTitle(t *testing.T) {
 	_, err := services.Posts.GetByID(1)
 	Expect(code).Equals(http.StatusBadRequest)
 	Expect(err).IsNotNil()
+}
+
+func TestGetPostHandler(t *testing.T) {
+	RegisterT(t)
+
+	server, services := mock.NewServer()
+	services.SetCurrentTenant(mock.DemoTenant)
+	services.SetCurrentUser(mock.JonSnow)
+	post, _ := services.Posts.Add("My First Post", "Such an amazing description")
+
+	code, query := server.
+		OnTenant(mock.DemoTenant).
+		AsUser(mock.JonSnow).
+		AddParam("number", post.Number).
+		ExecuteAsJSON(apiv1.GetPost())
+        
+	Expect(code).Equals(http.StatusOK)
+	Expect(query.String("title")).Equals("My First Post")
+	Expect(query.String("description")).Equals("Such an amazing description")	
 }
 
 func TestUpdatePostHandler_TenantStaff(t *testing.T) {
@@ -142,7 +161,7 @@ func TestSetResponseHandler(t *testing.T) {
 		OnTenant(mock.DemoTenant).
 		AsUser(mock.JonSnow).
 		AddParam("number", post.ID).
-		ExecutePost(apiv1.SetResponse(), fmt.Sprintf(`{ "status": %d, "text": "Done!" }`, models.PostCompleted))
+		ExecutePost(apiv1.SetResponse(), fmt.Sprintf(`{ "status": "%s", "text": "Done!" }`, models.PostCompleted.Name()))
 
 	post, _ = services.Posts.GetByNumber(post.Number)
 
@@ -165,7 +184,7 @@ func TestSetResponseHandler_Unauthorized(t *testing.T) {
 		OnTenant(mock.DemoTenant).
 		AsUser(mock.AryaStark).
 		AddParam("number", post.ID).
-		ExecutePost(apiv1.SetResponse(), fmt.Sprintf(`{ "status": %d, "text": "Done!" }`, models.PostCompleted))
+		ExecutePost(apiv1.SetResponse(), fmt.Sprintf(`{ "status": "%s", "text": "Done!" }`, models.PostCompleted.Name()))
 
 	post, _ = services.Posts.GetByNumber(post.Number)
 
@@ -182,7 +201,7 @@ func TestSetResponseHandler_Duplicate(t *testing.T) {
 	post1, _ := services.Posts.Add("The Post #1", "The Description #1")
 	post2, _ := services.Posts.Add("The Post #2", "The Description #2")
 
-	body := fmt.Sprintf(`{ "status": %d, "originalNumber": %d }`, models.PostDuplicate, post2.Number)
+	body := fmt.Sprintf(`{ "status": "%s", "originalNumber": %d }`, models.PostDuplicate.Name(), post2.Number)
 	code, _ := server.
 		OnTenant(mock.DemoTenant).
 		AsUser(mock.JonSnow).
@@ -205,7 +224,7 @@ func TestSetResponseHandler_Duplicate_NotFound(t *testing.T) {
 	services.SetCurrentUser(mock.AryaStark)
 	post1, _ := services.Posts.Add("The Post #1", "The Description #1")
 
-	body := fmt.Sprintf(`{ "status": %d, "originalNumber": 9999 }`, models.PostDuplicate)
+	body := fmt.Sprintf(`{ "status": "%s", "originalNumber": 9999 }`, models.PostDuplicate.Name())
 	code, _ := server.
 		OnTenant(mock.DemoTenant).
 		AsUser(mock.JonSnow).
@@ -223,7 +242,7 @@ func TestSetResponseHandler_Duplicate_Itself(t *testing.T) {
 	services.SetCurrentUser(mock.AryaStark)
 	post, _ := services.Posts.Add("The Post #1", "The Description #1")
 
-	body := fmt.Sprintf(`{ "status": %d, "originalNumber": %d }`, models.PostDuplicate, post.Number)
+	body := fmt.Sprintf(`{ "status": "%s", "originalNumber": %d }`, models.PostDuplicate.Name(), post.Number)
 	code, _ := server.
 		OnTenant(mock.DemoTenant).
 		AsUser(mock.JonSnow).
@@ -252,8 +271,8 @@ func TestAddVoteHandler(t *testing.T) {
 	second, _ = services.Posts.GetByNumber(2)
 
 	Expect(code).Equals(http.StatusOK)
-	Expect(first.TotalVotes).Equals(0)
-	Expect(second.TotalVotes).Equals(1)
+	Expect(first.VotesCount).Equals(0)
+	Expect(second.VotesCount).Equals(1)
 }
 
 func TestAddVoteHandler_InvalidPost(t *testing.T) {
@@ -288,7 +307,7 @@ func TestRemoveVoteHandler(t *testing.T) {
 	post, _ = services.Posts.GetByNumber(post.Number)
 
 	Expect(code).Equals(http.StatusOK)
-	Expect(post.TotalVotes).Equals(1)
+	Expect(post.VotesCount).Equals(1)
 }
 
 func TestDeletePostHandler_Authorized(t *testing.T) {

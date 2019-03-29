@@ -1,6 +1,7 @@
 package postgres_test
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
@@ -18,6 +19,7 @@ var users *postgres.UserStorage
 var posts *postgres.PostStorage
 var tags *postgres.TagStorage
 var notifications *postgres.NotificationStorage
+var events *postgres.EventStorage
 
 var demoTenant *models.Tenant
 var avengersTenant *models.Tenant
@@ -27,15 +29,23 @@ var aryaStark *models.User
 var sansaStark *models.User
 var tonyStark *models.User
 
+type Context struct{}
+
+func (c Context) TenantAssetsURL(path string, a ...interface{}) string {
+	return "http://cdn.test.fider.io" + fmt.Sprintf(path, a...)
+}
+
 func SetupDatabaseTest(t *testing.T) {
 	RegisterT(t)
 	trx, _ = db.Begin()
+	ctx := &Context{}
 
 	tenants = postgres.NewTenantStorage(trx)
-	users = postgres.NewUserStorage(trx)
-	posts = postgres.NewPostStorage(trx)
+	users = postgres.NewUserStorage(trx, ctx)
+	posts = postgres.NewPostStorage(trx, ctx)
 	tags = postgres.NewTagStorage(trx)
 	notifications = postgres.NewNotificationStorage(trx)
+	events = postgres.NewEventStorage(trx)
 
 	demoTenant, _ = tenants.GetByDomain("demo")
 	avengersTenant, _ = tenants.GetByDomain("avengers")

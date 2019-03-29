@@ -3,6 +3,7 @@ package email
 import (
 	"bytes"
 	"html/template"
+	"net/mail"
 	"regexp"
 	"strings"
 
@@ -74,11 +75,12 @@ func RenderMessage(ctx Context, templateName string, params Params) *Message {
 // Context holds everything emailers need to know about execution context
 type Context interface {
 	Tenant() *models.Tenant
+	BaseURL() string
 	LogoURL() string
 }
 
 // NoReply is the default 'from' address
-var NoReply = env.MustGet("EMAIL_NOREPLY")
+var NoReply = env.Config.Email.NoReply
 
 // Recipient contains details of who is receiving the email
 type Recipient struct {
@@ -96,18 +98,32 @@ func NewRecipient(name, address string, params Params) Recipient {
 	}
 }
 
-var whitelist = env.GetEnvOrDefault("EMAIL_WHITELIST", "")
+// Strings returns the RFC format to send emails via SMTP
+func (r Recipient) String() string {
+	if r.Address == "" {
+		return ""
+	}
+
+	address := mail.Address{
+		Name:    r.Name,
+		Address: r.Address,
+	}
+
+	return address.String()
+}
+
+var whitelist = env.Config.Email.Whitelist
 var whitelistRegex = regexp.MustCompile(whitelist)
-var blacklist = env.GetEnvOrDefault("EMAIL_BLACKLIST", "")
+var blacklist = env.Config.Email.Blacklist
 var blacklistRegex = regexp.MustCompile(blacklist)
 
-// SetWhitelist can be used to change email whitelist during rutime
+// SetWhitelist can be used to change email whitelist during runtime
 func SetWhitelist(s string) {
 	whitelist = s
 	whitelistRegex = regexp.MustCompile(whitelist)
 }
 
-// SetBlacklist can be used to change email blacklist during rutime
+// SetBlacklist can be used to change email blacklist during runtime
 func SetBlacklist(s string) {
 	blacklist = s
 	blacklistRegex = regexp.MustCompile(blacklist)

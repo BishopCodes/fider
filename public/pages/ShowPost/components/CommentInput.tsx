@@ -1,8 +1,7 @@
-import * as React from "react";
-import * as ReactDOM from "react-dom";
+import React from "react";
 
-import { Post, CurrentUser } from "@fider/models";
-import { Gravatar, UserName, Button, DisplayError, SignInControl, TextArea, Form } from "@fider/components/common";
+import { Post, ImageUpload } from "@fider/models";
+import { Avatar, UserName, Button, TextArea, Form, MultiImageUploader } from "@fider/components/common";
 import { SignInModal } from "@fider/components";
 
 import { cache, actions, Failure, Fider } from "@fider/services";
@@ -15,6 +14,7 @@ interface CommentInputState {
   content: string;
   error?: Failure;
   showSignIn: boolean;
+  attachments: ImageUpload[];
 }
 
 const CACHE_TITLE_KEY = "CommentInput-Comment-";
@@ -26,8 +26,9 @@ export class CommentInput extends React.Component<CommentInputProps, CommentInpu
     super(props);
 
     this.state = {
-      content: (Fider.session.isAuthenticated && cache.get(this.getCacheKey())) || "",
-      showSignIn: false
+      content: (Fider.session.isAuthenticated && cache.session.get(this.getCacheKey())) || "",
+      showSignIn: false,
+      attachments: []
     };
   }
 
@@ -36,8 +37,12 @@ export class CommentInput extends React.Component<CommentInputProps, CommentInpu
   }
 
   private commentChanged = (content: string) => {
-    cache.set(this.getCacheKey(), content);
+    cache.session.set(this.getCacheKey(), content);
     this.setState({ content });
+  };
+
+  private setAttachments = (attachments: ImageUpload[]) => {
+    this.setState({ attachments });
   };
 
   public submit = async () => {
@@ -45,9 +50,9 @@ export class CommentInput extends React.Component<CommentInputProps, CommentInpu
       error: undefined
     });
 
-    const result = await actions.createComment(this.props.post.number, this.state.content);
+    const result = await actions.createComment(this.props.post.number, this.state.content, this.state.attachments);
     if (result.ok) {
-      cache.remove(this.getCacheKey());
+      cache.session.remove(this.getCacheKey());
       location.reload();
     } else {
       this.setState({
@@ -72,7 +77,7 @@ export class CommentInput extends React.Component<CommentInputProps, CommentInpu
       <>
         <SignInModal isOpen={this.state.showSignIn} />
         <div className={`c-comment-input ${Fider.session.isAuthenticated && "m-authenticated"}`}>
-          {Fider.session.isAuthenticated && <Gravatar user={Fider.session.user} />}
+          {Fider.session.isAuthenticated && <Avatar user={Fider.session.user} />}
           <Form error={this.state.error}>
             {Fider.session.isAuthenticated && <UserName user={Fider.session.user} />}
             <TextArea
@@ -84,6 +89,14 @@ export class CommentInput extends React.Component<CommentInputProps, CommentInpu
               onFocus={this.handleOnFocus}
               inputRef={this.setInputRef}
             />
+            {this.state.content && (
+              <MultiImageUploader
+                field="attachments"
+                maxUploads={2}
+                previewMaxWidth={100}
+                onChange={this.setAttachments}
+              />
+            )}
             {this.state.content && (
               <Button color="positive" onClick={this.submit}>
                 Submit

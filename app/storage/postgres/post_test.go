@@ -1,12 +1,14 @@
 package postgres_test
 
 import (
+	"io/ioutil"
 	"testing"
 	"time"
 
 	"github.com/getfider/fider/app"
 	"github.com/getfider/fider/app/models"
 	. "github.com/getfider/fider/app/pkg/assert"
+	"github.com/getfider/fider/app/pkg/env"
 	"github.com/getfider/fider/app/pkg/errors"
 )
 
@@ -16,8 +18,8 @@ func TestPostStorage_GetAll(t *testing.T) {
 
 	now := time.Now()
 
-	trx.Execute("INSERT INTO posts (title, slug, number, description, created_on, tenant_id, user_id, status) VALUES ('add twitter integration', 'add-twitter-integration', 1, 'Would be great to see it integrated with twitter', $1, 1, 1, 1)", now)
-	trx.Execute("INSERT INTO posts (title, slug, number, description, created_on, tenant_id, user_id, status) VALUES ('this is my post', 'this-is-my-post', 2, 'no description', $1, 1, 2, 2)", now)
+	trx.Execute("INSERT INTO posts (title, slug, number, description, created_at, tenant_id, user_id, status) VALUES ('add twitter integration', 'add-twitter-integration', 1, 'Would be great to see it integrated with twitter', $1, 1, 1, 1)", now)
+	trx.Execute("INSERT INTO posts (title, slug, number, description, created_at, tenant_id, user_id, status) VALUES ('this is my post', 'this-is-my-post', 2, 'no description', $1, 1, 2, 2)", now)
 
 	posts.SetCurrentTenant(demoTenant)
 
@@ -30,7 +32,7 @@ func TestPostStorage_GetAll(t *testing.T) {
 	Expect(dbPosts[0].Number).Equals(2)
 	Expect(dbPosts[0].Description).Equals("no description")
 	Expect(dbPosts[0].User.Name).Equals("Arya Stark")
-	Expect(dbPosts[0].TotalVotes).Equals(0)
+	Expect(dbPosts[0].VotesCount).Equals(0)
 	Expect(dbPosts[0].Status).Equals(models.PostCompleted)
 
 	Expect(dbPosts[1].Title).Equals("add twitter integration")
@@ -38,7 +40,7 @@ func TestPostStorage_GetAll(t *testing.T) {
 	Expect(dbPosts[1].Number).Equals(1)
 	Expect(dbPosts[1].Description).Equals("Would be great to see it integrated with twitter")
 	Expect(dbPosts[1].User.Name).Equals("Jon Snow")
-	Expect(dbPosts[1].TotalVotes).Equals(0)
+	Expect(dbPosts[1].VotesCount).Equals(0)
 	Expect(dbPosts[1].Status).Equals(models.PostStarted)
 
 	dbPosts, err = posts.Search("twitter", "trending", "10", []string{})
@@ -65,7 +67,7 @@ func TestPostStorage_AddAndGet(t *testing.T) {
 	Expect(dbPostByID.ID).Equals(post.ID)
 	Expect(dbPostByID.Number).Equals(1)
 	Expect(dbPostByID.HasVoted).IsFalse()
-	Expect(dbPostByID.TotalVotes).Equals(0)
+	Expect(dbPostByID.VotesCount).Equals(0)
 	Expect(dbPostByID.Status).Equals(models.PostOpen)
 	Expect(dbPostByID.Title).Equals("My new post")
 	Expect(dbPostByID.Description).Equals("with this description")
@@ -79,7 +81,7 @@ func TestPostStorage_AddAndGet(t *testing.T) {
 	Expect(dbPostBySlug.ID).Equals(post.ID)
 	Expect(dbPostBySlug.Number).Equals(1)
 	Expect(dbPostBySlug.HasVoted).IsFalse()
-	Expect(dbPostBySlug.TotalVotes).Equals(0)
+	Expect(dbPostBySlug.VotesCount).Equals(0)
 	Expect(dbPostBySlug.Status).Equals(models.PostOpen)
 	Expect(dbPostBySlug.Title).Equals("My new post")
 	Expect(dbPostBySlug.Description).Equals("with this description")
@@ -140,7 +142,7 @@ func TestPostStorage_AddGetUpdateComment(t *testing.T) {
 	Expect(comment.ID).Equals(commentID)
 	Expect(comment.Content).Equals("Comment #1")
 	Expect(comment.User.ID).Equals(jonSnow.ID)
-	Expect(comment.EditedOn).IsNil()
+	Expect(comment.EditedAt).IsNil()
 	Expect(comment.EditedBy).IsNil()
 
 	posts.SetCurrentUser(aryaStark)
@@ -152,8 +154,28 @@ func TestPostStorage_AddGetUpdateComment(t *testing.T) {
 	Expect(comment.ID).Equals(commentID)
 	Expect(comment.Content).Equals("Comment #1 with edit")
 	Expect(comment.User.ID).Equals(jonSnow.ID)
-	Expect(comment.EditedOn).IsNotNil()
+	Expect(comment.EditedAt).IsNotNil()
 	Expect(comment.EditedBy.ID).Equals(aryaStark.ID)
+}
+
+func TestPostStorage_AddDeleteComment(t *testing.T) {
+	SetupDatabaseTest(t)
+	defer TeardownDatabaseTest()
+
+	posts.SetCurrentTenant(demoTenant)
+	posts.SetCurrentUser(jonSnow)
+	post, err := posts.Add("My new post", "with this description")
+	Expect(err).IsNil()
+
+	commentID, err := posts.AddComment(post, "Comment #1")
+	Expect(err).IsNil()
+
+	err = posts.DeleteComment(commentID)
+	Expect(err).IsNil()
+
+	comment, err := posts.GetCommentByID(commentID)
+	Expect(err).Equals(app.ErrNotFound)
+	Expect(comment).IsNil()
 }
 
 func TestPostStorage_AddAndGet_DifferentTenants(t *testing.T) {
@@ -222,7 +244,7 @@ func TestPostStorage_AddVote(t *testing.T) {
 
 	dbPost, err := posts.GetByNumber(1)
 	Expect(dbPost.HasVoted).IsFalse()
-	Expect(dbPost.TotalVotes).Equals(1)
+	Expect(dbPost.VotesCount).Equals(1)
 
 	err = posts.AddVote(post, jonSnow)
 	Expect(err).IsNil()
@@ -230,7 +252,7 @@ func TestPostStorage_AddVote(t *testing.T) {
 	dbPost, err = posts.GetByNumber(1)
 	Expect(err).IsNil()
 	Expect(dbPost.HasVoted).IsTrue()
-	Expect(dbPost.TotalVotes).Equals(2)
+	Expect(dbPost.VotesCount).Equals(2)
 }
 
 func TestPostStorage_AddVote_Twice(t *testing.T) {
@@ -250,7 +272,7 @@ func TestPostStorage_AddVote_Twice(t *testing.T) {
 
 	dbPost, err := posts.GetByNumber(1)
 	Expect(err).IsNil()
-	Expect(dbPost.TotalVotes).Equals(1)
+	Expect(dbPost.VotesCount).Equals(1)
 }
 
 func TestPostStorage_RemoveVote(t *testing.T) {
@@ -270,7 +292,7 @@ func TestPostStorage_RemoveVote(t *testing.T) {
 
 	dbPost, err := posts.GetByNumber(1)
 	Expect(err).IsNil()
-	Expect(dbPost.TotalVotes).Equals(0)
+	Expect(dbPost.VotesCount).Equals(0)
 }
 
 func TestPostStorage_RemoveVote_Twice(t *testing.T) {
@@ -293,7 +315,7 @@ func TestPostStorage_RemoveVote_Twice(t *testing.T) {
 
 	dbPost, err := posts.GetByNumber(1)
 	Expect(err).IsNil()
-	Expect(dbPost.TotalVotes).Equals(0)
+	Expect(dbPost.VotesCount).Equals(0)
 }
 
 func TestPostStorage_SetResponse(t *testing.T) {
@@ -336,15 +358,15 @@ func TestPostStorage_SetResponse_ChangeText(t *testing.T) {
 	post, _ := posts.Add("My new post", "with this description")
 	posts.SetResponse(post, "We liked this post", models.PostStarted)
 	post, _ = posts.GetByID(post.ID)
-	respondedOn := post.Response.RespondedOn
+	respondedAt := post.Response.RespondedAt
 
 	posts.SetResponse(post, "We liked this post and we'll work on it", models.PostStarted)
 	post, _ = posts.GetByID(post.ID)
-	Expect(post.Response.RespondedOn).Equals(respondedOn)
+	Expect(post.Response.RespondedAt).Equals(respondedAt)
 
 	posts.SetResponse(post, "We finished it", models.PostCompleted)
 	post, _ = posts.GetByID(post.ID)
-	Expect(post.Response.RespondedOn).TemporarilySimilar(respondedOn, time.Second)
+	Expect(post.Response.RespondedAt).TemporarilySimilar(respondedAt, time.Second)
 }
 
 func TestPostStorage_SetResponse_AsDuplicate(t *testing.T) {
@@ -365,14 +387,14 @@ func TestPostStorage_SetResponse_AsDuplicate(t *testing.T) {
 	posts.MarkAsDuplicate(post2, post1)
 	post1, _ = posts.GetByID(post1.ID)
 
-	Expect(post1.TotalVotes).Equals(2)
+	Expect(post1.VotesCount).Equals(2)
 	Expect(post1.Status).Equals(models.PostOpen)
 	Expect(post1.Response).IsNil()
 
 	post2, _ = posts.GetByID(post2.ID)
 
 	Expect(post2.Response.Text).Equals("")
-	Expect(post2.TotalVotes).Equals(1)
+	Expect(post2.VotesCount).Equals(1)
 	Expect(post2.Status).Equals(models.PostDuplicate)
 	Expect(post2.Response.User.ID).Equals(1)
 	Expect(post2.Response.Original.Number).Equals(post1.Number)
@@ -413,7 +435,7 @@ func TestPostStorage_AddVote_ClosedPost(t *testing.T) {
 
 	dbPost, err := posts.GetByNumber(post.Number)
 	Expect(err).IsNil()
-	Expect(dbPost.TotalVotes).Equals(0)
+	Expect(dbPost.VotesCount).Equals(0)
 }
 
 func TestPostStorage_RemoveVote_ClosedPost(t *testing.T) {
@@ -429,7 +451,7 @@ func TestPostStorage_RemoveVote_ClosedPost(t *testing.T) {
 
 	dbPost, err := posts.GetByNumber(post.Number)
 	Expect(err).IsNil()
-	Expect(dbPost.TotalVotes).Equals(1)
+	Expect(dbPost.VotesCount).Equals(1)
 }
 
 func TestPostStorage_ListVotedPosts(t *testing.T) {
@@ -505,4 +527,112 @@ func TestPostStorage_IsReferenced(t *testing.T) {
 	referenced, err = posts.IsReferenced(post3)
 	Expect(referenced).IsTrue()
 	Expect(err).IsNil()
+}
+
+func TestPostStorage_ListVotesOfPost(t *testing.T) {
+	SetupDatabaseTest(t)
+	defer TeardownDatabaseTest()
+
+	posts.SetCurrentTenant(demoTenant)
+	posts.SetCurrentUser(jonSnow)
+	post1, _ := posts.Add("My new post", "with this description")
+	posts.AddVote(post1, jonSnow)
+	posts.AddVote(post1, aryaStark)
+
+	users, err := posts.ListVotes(post1, -1)
+	Expect(err).IsNil()
+	Expect(users).HasLen(2)
+
+	Expect(users[0].CreatedAt).TemporarilySimilar(time.Now(), 5*time.Second)
+	Expect(users[0].User.Name).Equals("Jon Snow")
+	Expect(users[0].User.Email).Equals("jon.snow@got.com")
+
+	Expect(users[1].CreatedAt).TemporarilySimilar(time.Now(), 5*time.Second)
+	Expect(users[1].User.Name).Equals("Arya Stark")
+	Expect(users[1].User.Email).Equals("arya.stark@got.com")
+}
+
+func TestPostStorage_Attachments(t *testing.T) {
+	SetupDatabaseTest(t)
+	defer TeardownDatabaseTest()
+
+	posts.SetCurrentTenant(demoTenant)
+	posts.SetCurrentUser(jonSnow)
+	post1, _ := posts.Add("My new post", "with this description")
+	post2, _ := posts.Add("My other post", "with another description")
+
+	attachments, err := posts.GetAttachments(post1, nil)
+	Expect(err).IsNil()
+	Expect(attachments).HasLen(0)
+
+	bytes, err := ioutil.ReadFile(env.Path("favicon.png"))
+	Expect(err).IsNil()
+
+	err = posts.SetAttachments(post1, nil, []*models.ImageUpload{
+		&models.ImageUpload{
+			BlobKey: "12345-test.png",
+			Upload: &models.ImageUploadData{
+				FileName:    "test.png",
+				ContentType: "image/png",
+				Content:     bytes,
+			},
+		},
+	})
+	Expect(err).IsNil()
+
+	attachments, err = posts.GetAttachments(post1, nil)
+	Expect(err).IsNil()
+	Expect(attachments).HasLen(1)
+	Expect(attachments[0]).Equals("12345-test.png")
+
+	attachments, err = posts.GetAttachments(post2, nil)
+	Expect(err).IsNil()
+	Expect(attachments).HasLen(0)
+
+	err = posts.SetAttachments(post2, nil, []*models.ImageUpload{
+		&models.ImageUpload{
+			BlobKey: "12345-test.png",
+			Remove:  true,
+		},
+		&models.ImageUpload{
+			BlobKey: "67890-test2.png",
+			Upload: &models.ImageUploadData{
+				FileName:    "test2.png",
+				ContentType: "image/png",
+				Content:     bytes,
+			},
+		},
+		&models.ImageUpload{
+			BlobKey: "67890-test6.png",
+			Upload: &models.ImageUploadData{
+				FileName:    "test6.png",
+				ContentType: "image/png",
+				Content:     bytes,
+			},
+		},
+	})
+	Expect(err).IsNil()
+
+	attachments, err = posts.GetAttachments(post1, nil)
+	Expect(err).IsNil()
+	Expect(attachments).HasLen(1)
+	Expect(attachments[0]).Equals("12345-test.png")
+
+	attachments, err = posts.GetAttachments(post2, nil)
+	Expect(err).IsNil()
+	Expect(attachments).HasLen(2)
+	Expect(attachments[0]).Equals("67890-test2.png")
+	Expect(attachments[1]).Equals("67890-test6.png")
+
+	err = posts.SetAttachments(post1, nil, []*models.ImageUpload{
+		&models.ImageUpload{
+			BlobKey: "12345-test.png",
+			Remove:  true,
+		},
+	})
+	Expect(err).IsNil()
+
+	attachments, err = posts.GetAttachments(post1, nil)
+	Expect(err).IsNil()
+	Expect(attachments).HasLen(0)
 }

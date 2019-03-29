@@ -1,62 +1,72 @@
 import "./ShowPost.page.scss";
 
-import * as React from "react";
+import React from "react";
 
-import { Comment, Post, Tag } from "@fider/models";
+import { Comment, Post, Tag, Vote, ImageUpload } from "@fider/models";
 import { actions, Failure, Fider } from "@fider/services";
 
-import { TagsPanel, DiscussionPanel, ResponseForm, NotificationsPanel, ModerationPanel } from "./";
 import {
   VoteCounter,
   ShowPostResponse,
-  DisplayError,
   Button,
   UserName,
-  Gravatar,
+  Avatar,
   Moment,
   MultiLineText,
   List,
   ListItem,
   Input,
   Form,
-  TextArea
+  TextArea,
+  MultiImageUploader,
+  ImageViewer
 } from "@fider/components";
+import { FaSave, FaTimes, FaEdit } from "react-icons/fa";
+import { ResponseForm } from "./components/ResponseForm";
+import { TagsPanel } from "./components/TagsPanel";
+import { NotificationsPanel } from "./components/NotificationsPanel";
+import { ModerationPanel } from "./components/ModerationPanel";
+import { DiscussionPanel } from "./components/DiscussionPanel";
+import { VotesPanel } from "./components/VotesPanel";
 
 interface ShowPostPageProps {
   post: Post;
   subscribed: boolean;
   comments: Comment[];
   tags: Tag[];
+  votes: Vote[];
+  attachments: string[];
 }
 
 interface ShowPostPageState {
   editMode: boolean;
   newTitle: string;
+  attachments: ImageUpload[];
   newDescription: string;
   error?: Failure;
 }
 
-export class ShowPostPage extends React.Component<ShowPostPageProps, ShowPostPageState> {
+export default class ShowPostPage extends React.Component<ShowPostPageProps, ShowPostPageState> {
   constructor(props: ShowPostPageProps) {
     super(props);
 
     this.state = {
       editMode: false,
       newTitle: this.props.post.title,
-      newDescription: this.props.post.description
+      newDescription: this.props.post.description,
+      attachments: []
     };
   }
 
   private saveChanges = async () => {
-    const result = await actions.updatePost(this.props.post.number, this.state.newTitle, this.state.newDescription);
+    const result = await actions.updatePost(
+      this.props.post.number,
+      this.state.newTitle,
+      this.state.newDescription,
+      this.state.attachments
+    );
     if (result.ok) {
-      this.setState({
-        error: undefined,
-        editMode: false
-      });
-      this.props.post.title = this.state.newTitle;
-      this.props.post.description = this.state.newDescription;
-      this.forceUpdate();
+      location.reload();
     } else {
       this.setState({
         error: result.error
@@ -70,6 +80,10 @@ export class ShowPostPage extends React.Component<ShowPostPageProps, ShowPostPag
 
   private setNewDescription = (newDescription: string) => {
     this.setState({ newDescription });
+  };
+
+  private setAttachments = (attachments: ImageUpload[]) => {
+    this.setState({ attachments });
   };
 
   private cancelEdit = async () => {
@@ -98,7 +112,7 @@ export class ShowPostPage extends React.Component<ShowPostPageProps, ShowPostPag
                 )}
 
                 <span className="info">
-                  Shared <Moment date={this.props.post.createdOn} /> by <Gravatar user={this.props.post.user} />{" "}
+                  <Moment date={this.props.post.createdAt} /> &middot; <Avatar user={this.props.post.user} />{" "}
                   <UserName user={this.props.post.user} />
                 </span>
               </div>
@@ -109,19 +123,28 @@ export class ShowPostPage extends React.Component<ShowPostPageProps, ShowPostPag
           {this.state.editMode ? (
             <Form error={this.state.error}>
               <TextArea field="description" value={this.state.newDescription} onChange={this.setNewDescription} />
+              <MultiImageUploader
+                field="attachments"
+                bkeys={this.props.attachments}
+                maxUploads={3}
+                previewMaxWidth={100}
+                onChange={this.setAttachments}
+              />
             </Form>
           ) : (
-            <MultiLineText
-              className="description"
-              text={this.props.post.description || "No description provided."}
-              style="simple"
-            />
+            <>
+              <MultiLineText className="description" text={this.props.post.description} style="simple" />
+              {this.props.attachments.map(x => (
+                <ImageViewer key={x} bkey={x} />
+              ))}
+            </>
           )}
-
-          <ShowPostResponse status={this.props.post.status} response={this.props.post.response} />
+          <ShowPostResponse showUser={true} status={this.props.post.status} response={this.props.post.response} />
         </div>
 
         <div className="action-col">
+          <VotesPanel post={this.props.post} votes={this.props.votes} />
+
           {Fider.session.isAuthenticated &&
             Fider.session.user.isCollaborator && [
               <span key={0} className="subtitle">
@@ -131,12 +154,12 @@ export class ShowPostPage extends React.Component<ShowPostPageProps, ShowPostPag
                 <List key={1}>
                   <ListItem>
                     <Button className="save" color="positive" fluid={true} onClick={this.saveChanges}>
-                      <i className="save icon" /> Save
+                      <FaSave /> Save
                     </Button>
                   </ListItem>
                   <ListItem>
                     <Button className="cancel" fluid={true} onClick={this.cancelEdit}>
-                      <i className="cancel icon" /> Cancel
+                      <FaTimes /> Cancel
                     </Button>
                   </ListItem>
                 </List>
@@ -144,7 +167,7 @@ export class ShowPostPage extends React.Component<ShowPostPageProps, ShowPostPag
                 <List key={1}>
                   <ListItem>
                     <Button className="edit" fluid={true} onClick={this.startEdit}>
-                      <i className="edit icon" /> Edit
+                      <FaEdit /> Edit
                     </Button>
                   </ListItem>
                   <ListItem>

@@ -73,7 +73,7 @@ func TestVerifySignInKeyHandler_ExpiredKey(t *testing.T) {
 	e := &models.SignInByEmail{Email: "jon.snow@got.com"}
 	services.Tenants.SaveVerificationKey("1234567890", 5*time.Minute, e)
 	request, _ := services.Tenants.FindVerificationByKey(models.EmailVerificationKindSignIn, "1234567890")
-	request.ExpiresOn = request.CreatedOn.Add(-6 * time.Minute) //reduce 1 minute
+	request.ExpiresAt = request.CreatedAt.Add(-6 * time.Minute) //reduce 1 minute
 
 	code, _ := server.
 		OnTenant(mock.DemoTenant).
@@ -200,14 +200,14 @@ func TestVerifySignInKeyHandler_PrivateTenant_InviteRequest_NewUser(t *testing.T
 	Expect(code).Equals(http.StatusOK)
 }
 
-func TestVerifySignUpKeyHandler_InactiveTenant(t *testing.T) {
+func TestVerifySignUpKeyHandler_PendingTenant(t *testing.T) {
 	RegisterT(t)
 
 	server, services := mock.NewServer()
 
 	e := &models.CreateTenant{Email: "hot.pie@got.com", Name: "Hot Pie"}
 	services.Tenants.SaveVerificationKey("1234567890", 15*time.Minute, e)
-	mock.DemoTenant.Status = models.TenantInactive
+	mock.DemoTenant.Status = models.TenantPending
 
 	code, response := server.
 		OnTenant(mock.DemoTenant).
@@ -273,7 +273,7 @@ func TestCompleteSignInProfileHandler_CorrectKey(t *testing.T) {
 
 	request, err := services.Tenants.FindVerificationByKey(models.EmailVerificationKindSignIn, "1234567890")
 	Expect(err).IsNil()
-	Expect(request.VerifiedOn).IsNotNil()
+	Expect(request.VerifiedAt).IsNotNil()
 }
 
 func TestSignInPageHandler_AuthenticatedUser(t *testing.T) {

@@ -32,8 +32,19 @@ const monthNames = [
   "December"
 ];
 
+export const currencySymbol = (currencyCode: string): string => {
+  currencyCode = currencyCode ? currencyCode.toLowerCase() : "";
+  switch (currencyCode) {
+    case "eur":
+      return "€";
+    case "usd":
+      return "$";
+  }
+  throw new Error(`Invalid currency code '${currencyCode}'`);
+};
+
 const twoDigits = (value: number): string => {
-  return value < 9 ? `0${value}` : value.toString();
+  return value <= 9 ? `0${value}` : value.toString();
 };
 
 export const formatDate = (input: Date | string): string => {
@@ -45,7 +56,7 @@ export const formatDate = (input: Date | string): string => {
   const hours = twoDigits(date.getHours());
   const minutes = twoDigits(date.getMinutes());
 
-  return `${monthNames[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()} · ${hours}:${minutes}`;
+  return `${monthNames[monthIndex]} ${day}, ${year} · ${hours}:${minutes}`;
 };
 
 const templates: { [key: string]: string } = {
@@ -123,9 +134,19 @@ export const isCookieEnabled = (): boolean => {
   }
 };
 
-export const uploadedImageURL = (id: number, size: number): string | undefined => {
-  if (id > 0) {
-    return `${Fider.settings.assetsURL}/images/${size}/${id}`;
+export const uploadedImageURL = (bkey: string | undefined, size?: number): string | undefined => {
+  if (bkey) {
+    if (size) {
+      return `${Fider.settings.tenantAssetsURL}/images/${bkey}?size=${size}`;
+    }
+    return `${Fider.settings.tenantAssetsURL}/images/${bkey}`;
   }
   return undefined;
+};
+
+export const truncate = (input: string, maxLength: number): string => {
+  if (input && input.length > 1000) {
+    return `${input.substr(0, maxLength)}...`;
+  }
+  return input;
 };

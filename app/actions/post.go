@@ -1,8 +1,6 @@
 package actions
 
 import (
-	"strings"
-
 	"github.com/gosimple/slug"
 
 	"github.com/getfider/fider/app"
@@ -33,7 +31,7 @@ func (input *CreateNewPost) Validate(user *models.User, services *app.Services) 
 
 	if input.Model.Title == "" {
 		result.AddFieldFailure("title", "Title is required.")
-	} else if len(input.Model.Title) < 10 || len(strings.Split(input.Model.Title, " ")) < 3 {
+	} else if len(input.Model.Title) < 10 {
 		result.AddFieldFailure("title", "Title needs to be more descriptive.")
 	}
 
@@ -47,6 +45,16 @@ func (input *CreateNewPost) Validate(user *models.User, services *app.Services) 
 	} else if post != nil {
 		result.AddFieldFailure("title", "This has already been posted before.")
 	}
+
+	messages, err := validate.MultiImageUpload(nil, input.Model.Attachments, validate.MultiImageUploadOpts{
+		MaxUploads:   3,
+		MaxKilobytes: 5120,
+		ExactRatio:   false,
+	})
+	if err != nil {
+		return validate.Error(err)
+	}
+	result.AddFieldFailure("attachments", messages...)
 
 	return result
 }
@@ -79,7 +87,7 @@ func (input *UpdatePost) Validate(user *models.User, services *app.Services) *va
 
 	if input.Model.Title == "" {
 		result.AddFieldFailure("title", "Title is required.")
-	} else if len(input.Model.Title) < 10 || len(strings.Split(input.Model.Title, " ")) < 3 {
+	} else if len(input.Model.Title) < 10 {
 		result.AddFieldFailure("title", "Title needs to be more descriptive.")
 	}
 
@@ -93,6 +101,21 @@ func (input *UpdatePost) Validate(user *models.User, services *app.Services) *va
 	} else if another != nil && another.ID != post.ID {
 		result.AddFieldFailure("title", "This has already been posted before.")
 	}
+
+	attachments, err := services.Posts.GetAttachments(post, nil)
+	if err != nil {
+		return validate.Error(err)
+	}
+
+	messages, err := validate.MultiImageUpload(attachments, input.Model.Attachments, validate.MultiImageUploadOpts{
+		MaxUploads:   3,
+		MaxKilobytes: 5120,
+		ExactRatio:   false,
+	})
+	if err != nil {
+		return validate.Error(err)
+	}
+	result.AddFieldFailure("attachments", messages...)
 
 	input.Post = post
 
@@ -122,6 +145,16 @@ func (input *AddNewComment) Validate(user *models.User, services *app.Services) 
 	if input.Model.Content == "" {
 		result.AddFieldFailure("content", "Comment is required.")
 	}
+
+	messages, err := validate.MultiImageUpload(nil, input.Model.Attachments, validate.MultiImageUploadOpts{
+		MaxUploads:   2,
+		MaxKilobytes: 5120,
+		ExactRatio:   false,
+	})
+	if err != nil {
+		return validate.Error(err)
+	}
+	result.AddFieldFailure("attachments", messages...)
 
 	return result
 }
@@ -212,7 +245,9 @@ func (input *DeletePost) Validate(user *models.User, services *app.Services) *va
 
 // EditComment represents the action to update an existing comment
 type EditComment struct {
-	Model *models.EditComment
+	Model   *models.EditComment
+	Post    *models.Post
+	Comment *models.Comment
 }
 
 // Initialize the model
@@ -223,11 +258,18 @@ func (input *EditComment) Initialize() interface{} {
 
 // IsAuthorized returns true if current user is authorized to perform this action
 func (input *EditComment) IsAuthorized(user *models.User, services *app.Services) bool {
+	post, err := services.Posts.GetByNumber(input.Model.PostNumber)
+	if err != nil {
+		return false
+	}
+
 	comment, err := services.Posts.GetCommentByID(input.Model.ID)
 	if err != nil {
 		return false
 	}
 
+	input.Post = post
+	input.Comment = comment
 	return user.ID == comment.User.ID || user.IsCollaborator()
 }
 
@@ -239,5 +281,46 @@ func (input *EditComment) Validate(user *models.User, services *app.Services) *v
 		result.AddFieldFailure("content", "Comment is required.")
 	}
 
+	attachments, err := services.Posts.GetAttachments(input.Post, input.Comment)
+	if err != nil {
+		return validate.Error(err)
+	}
+
+	messages, err := validate.MultiImageUpload(attachments, input.Model.Attachments, validate.MultiImageUploadOpts{
+		MaxUploads:   2,
+		MaxKilobytes: 5120,
+		ExactRatio:   false,
+	})
+	if err != nil {
+		return validate.Error(err)
+	}
+	result.AddFieldFailure("attachments", messages...)
+
 	return result
+}
+
+// DeleteComment represents the action of deleting an existing comment
+type DeleteComment struct {
+	Model *models.DeleteComment
+}
+
+// Initialize the model
+func (input *DeleteComment) Initialize() interface{} {
+	input.Model = new(models.DeleteComment)
+	return input.Model
+}
+
+// IsAuthorized returns true if current user is authorized to perform this action
+func (input *DeleteComment) IsAuthorized(user *models.User, services *app.Services) bool {
+	comment, err := services.Posts.GetCommentByID(input.Model.CommentID)
+	if err != nil {
+		return false
+	}
+
+	return user.ID == comment.User.ID || user.IsCollaborator()
+}
+
+// Validate if current model is valid
+func (input *DeleteComment) Validate(user *models.User, services *app.Services) *validate.Result {
+	return validate.Success()
 }

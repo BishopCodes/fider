@@ -23,7 +23,7 @@ type Notification struct {
 	Title     string    `json:"title" db:"title"`
 	Link      string    `json:"link" db:"link"`
 	Read      bool      `json:"read" db:"read"`
-	CreatedOn time.Time `json:"createdOn" db:"created_on"`
+	CreatedAt time.Time `json:"createdAt" db:"created_at"`
 }
 
 // CreateEditOAuthConfig is used to create/edit an OAuth Configuration
@@ -49,7 +49,7 @@ type OAuthConfig struct {
 	ID                int
 	Provider          string
 	DisplayName       string
-	LogoID            int
+	LogoBlobKey       string
 	Status            int
 	ClientID          string
 	ClientSecret      string
@@ -72,7 +72,7 @@ func (o OAuthConfig) MarshalJSON() ([]byte, error) {
 		"id":                o.ID,
 		"provider":          o.Provider,
 		"displayName":       o.DisplayName,
-		"logoID":            o.LogoID,
+		"logoBlobKey":       o.LogoBlobKey,
 		"status":            o.Status,
 		"clientID":          o.ClientID,
 		"clientSecret":      secret,
@@ -96,4 +96,12 @@ var (
 // APIAuthorize is used during API Authorize process
 type APIAuthorize struct {
 	APIKey string `json:"apiKey"`
+}
+
+// Event is used for tracking client audit events and actions
+type Event struct {
+	ID        int       `json:"id"`
+	ClientIP  string    `json:"clientIP"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"createdAt"`
 }

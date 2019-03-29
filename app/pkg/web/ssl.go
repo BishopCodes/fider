@@ -6,6 +6,12 @@ import (
 	"net/http"
 	"strings"
 
+	"golang.org/x/crypto/acme"
+
+	"github.com/getfider/fider/app/pkg/blob"
+	"github.com/getfider/fider/app/pkg/dbx"
+	"github.com/getfider/fider/app/pkg/di"
+	"github.com/getfider/fider/app/pkg/env"
 	"github.com/getfider/fider/app/pkg/errors"
 	"golang.org/x/crypto/acme/autocert"
 )
@@ -42,11 +48,12 @@ type CertificateManager struct {
 }
 
 //NewCertificateManager creates a new CertificateManager
-func NewCertificateManager(certFile, keyFile, cacheDir string) (*CertificateManager, error) {
+func NewCertificateManager(certFile, keyFile string, db *dbx.Database) (*CertificateManager, error) {
 	manager := &CertificateManager{
 		autossl: autocert.Manager{
 			Prompt: autocert.AcceptTOS,
-			Cache:  autocert.DirCache(cacheDir),
+			Cache:  blob.NewAutoCert(di.NewBlobStorage(db)),
+			Client: acmeClient(),
 		},
 	}
 
@@ -71,16 +78,36 @@ func NewCertificateManager(certFile, keyFile, cacheDir string) (*CertificateMana
 //Otherwise fallsback to a automatically generated certificate by Let's Encrypt
 func (m *CertificateManager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	if m.leaf != nil {
-		//skip autoSSL is ServerName is empty or does't contain a dot
-		skipAutoCert := hello.ServerName == "" || !strings.Contains(strings.Trim(hello.ServerName, "."), ".")
-		if skipAutoCert || m.leaf.VerifyHostname(hello.ServerName) == nil {
+		serverName := strings.Trim(strings.ToLower(hello.ServerName), ".")
+
+		// If ServerName is empty or does't contain a dot, just return the certificate
+		if serverName == "" || !strings.Contains(serverName, ".") {
 			return &m.cert, nil
 		}
+
+		if env.IsSingleHostMode() {
+			return &m.cert, nil
+		} else if strings.HasSuffix(serverName, env.MultiTenantDomain()) {
+			if m.leaf.VerifyHostname(serverName) == nil {
+				return &m.cert, nil
+			}
+			return nil, errors.New(`ssl: invalid server name "%s"`, serverName)
+		}
 	}
+
 	return m.autossl.GetCertificate(hello)
 }
 
 //StartHTTPServer creates a new HTTP server on port 80 that is used for the ACME HTTP Challenge
 func (m *CertificateManager) StartHTTPServer() {
 	http.ListenAndServe(":80", m.autossl.HTTPHandler(nil))
+}
+
+func acmeClient() *acme.Client {
+	if env.IsTest() {
+		return &acme.Client{
+			DirectoryURL: "https://acme-staging.api.letsencrypt.org/directory",
+		}
+	}
+	return nil
 }

@@ -1,10 +1,12 @@
-import * as React from "react";
-
-import { ListPosts, TagsFilter, PostFilter } from "../";
+import React from "react";
 
 import { Post, Tag, CurrentUser } from "@fider/models";
 import { Loader, Field, Input } from "@fider/components";
 import { actions, navigator, querystring } from "@fider/services";
+import { FaTimes, FaSearch } from "react-icons/fa";
+import { PostFilter } from "./PostFilter";
+import { ListPosts } from "./ListPosts";
+import { TagsFilter } from "./TagsFilter";
 
 interface PostsContainerProps {
   user?: CurrentUser;
@@ -16,7 +18,7 @@ interface PostsContainerProps {
 interface PostsContainerState {
   loading: boolean;
   posts?: Post[];
-  filter: string;
+  view: string;
   tags: string[];
   query: string;
   limit?: number;
@@ -29,10 +31,10 @@ export class PostsContainer extends React.Component<PostsContainerProps, PostsCo
     this.state = {
       posts: this.props.posts,
       loading: false,
-      filter: querystring.get("f"),
-      query: querystring.get("q"),
-      tags: querystring.getArray("t"),
-      limit: querystring.getNumber("l")
+      view: querystring.get("view"),
+      query: querystring.get("query"),
+      tags: querystring.getArray("tags"),
+      limit: querystring.getNumber("limit")
     };
   }
 
@@ -44,32 +46,32 @@ export class PostsContainer extends React.Component<PostsContainerProps, PostsCo
       const query = this.state.query.trim().toLowerCase();
       navigator.replaceState(
         querystring.stringify({
-          t: this.state.tags,
-          q: query,
-          f: this.state.filter,
-          l: this.state.limit
+          tags: this.state.tags,
+          query,
+          view: this.state.view,
+          limit: this.state.limit
         })
       );
 
-      this.searchPosts(query, this.state.filter, this.state.limit, this.state.tags, reset);
+      this.searchPosts(query, this.state.view, this.state.limit, this.state.tags, reset);
     });
   }
 
   private timer?: number;
-  private async searchPosts(query: string, filter: string, limit: number | undefined, tags: string[], reset: boolean) {
+  private async searchPosts(query: string, view: string, limit: number | undefined, tags: string[], reset: boolean) {
     window.clearTimeout(this.timer);
     this.setState({ posts: reset ? undefined : this.state.posts, loading: true });
     this.timer = window.setTimeout(() => {
-      actions.searchPosts({ query, filter, limit, tags }).then(response => {
-        if (this.state.loading) {
+      actions.searchPosts({ query, view, limit, tags }).then(response => {
+        if (response.ok && this.state.loading) {
           this.setState({ loading: false, posts: response.data });
         }
       });
-    }, 200);
+    }, 500);
   }
 
-  private handleFilterChanged = (filter: string) => {
-    this.changeFilterCriteria({ filter }, true);
+  private handleViewChanged = (view: string) => {
+    this.changeFilterCriteria({ view }, true);
   };
 
   private handleTagsFilterChanged = (tags: string[]) => {
@@ -77,10 +79,6 @@ export class PostsContainer extends React.Component<PostsContainerProps, PostsCo
   };
 
   private handleSearchFilterChanged = (query: string) => {
-    this.changeFilterCriteria({ query }, true);
-  };
-
-  private handleSearchClick = (query: string) => {
     this.changeFilterCriteria({ query }, true);
   };
 
@@ -93,20 +91,23 @@ export class PostsContainer extends React.Component<PostsContainerProps, PostsCo
     this.changeFilterCriteria({ limit: (this.state.limit || 30) + 10 }, false);
   };
 
-  private canShowMore = (): boolean => {
-    return this.state.posts ? this.state.posts.length >= (this.state.limit || 30) : false;
+  private getShowMoreLink = (): string | undefined => {
+    if (this.state.posts && this.state.posts.length >= (this.state.limit || 30)) {
+      return querystring.set("limit", (this.state.limit || 30) + 10);
+    }
   };
 
   public render() {
+    const showMoreLink = this.getShowMoreLink();
     return (
       <>
         <div className="row">
           {!this.state.query && (
-            <div className="l-filter-col col-sm-7 col-md-8 col-lg-9 mb-2">
+            <div className="l-filter-col col-7 col-md-8 col-lg-9 mb-2">
               <Field>
                 <PostFilter
-                  activeFilter={this.state.filter}
-                  filterChanged={this.handleFilterChanged}
+                  activeView={this.state.view}
+                  viewChanged={this.handleViewChanged}
                   countPerStatus={this.props.countPerStatus}
                 />
                 <TagsFilter
@@ -117,10 +118,10 @@ export class PostsContainer extends React.Component<PostsContainerProps, PostsCo
               </Field>
             </div>
           )}
-          <div className={!this.state.query ? `l-search-col col-sm-5 col-md-4 col-lg-3 mb-2` : "col-sm-12 mb-2"}>
+          <div className={!this.state.query ? `l-search-col col-5 col-md-4 col-lg-3 mb-2` : "col-sm-12 mb-2"}>
             <Input
               field="query"
-              icon={this.state.query ? "cancel" : "search"}
+              icon={this.state.query ? FaTimes : FaSearch}
               onIconClick={this.state.query ? this.clearSearch : undefined}
               placeholder="Search..."
               value={this.state.query}
@@ -134,10 +135,10 @@ export class PostsContainer extends React.Component<PostsContainerProps, PostsCo
           emptyText={"No results matched your search, try something different."}
         />
         {this.state.loading && <Loader />}
-        {this.canShowMore() && (
-          <h5 className="c-post-list-show-more" onTouchEnd={this.showMore} onClick={this.showMore}>
+        {showMoreLink && (
+          <a href={showMoreLink} className="c-post-list-show-more" onTouchEnd={this.showMore} onClick={this.showMore}>
             View more posts
-          </h5>
+          </a>
         )}
       </>
     );

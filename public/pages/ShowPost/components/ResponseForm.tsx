@@ -1,10 +1,11 @@
-import * as React from "react";
+import React from "react";
 
-import { Modal, Button, DisplayError, Textarea, Select, Form, TextArea, Field, SelectOption } from "@fider/components";
-import { Comment, Post, PostStatus, User } from "@fider/models";
-import { PostSearch } from "../";
+import { Modal, Button, DisplayError, Select, Form, TextArea, Field, SelectOption } from "@fider/components";
+import { Post, PostStatus } from "@fider/models";
 
 import { actions, Failure } from "@fider/services";
+import { FaBullhorn } from "react-icons/fa";
+import { PostSearch } from "./PostSearch";
 
 interface ResponseFormProps {
   post: Post;
@@ -12,7 +13,7 @@ interface ResponseFormProps {
 
 interface ResponseFormState {
   showModal: boolean;
-  status: number;
+  status: string;
   text: string;
   originalNumber: number;
   error?: Failure;
@@ -51,7 +52,7 @@ export class ResponseForm extends React.Component<ResponseFormProps, ResponseFor
 
   private setStatus = (opt?: SelectOption) => {
     if (opt) {
-      this.setState({ status: parseInt(opt.value, 10) });
+      this.setState({ status: opt.value });
     }
   };
 
@@ -66,7 +67,7 @@ export class ResponseForm extends React.Component<ResponseFormProps, ResponseFor
   public render() {
     const button = (
       <Button className="respond" fluid={true} onClick={this.showModal}>
-        <i className="announcement icon" /> Respond
+        <FaBullhorn /> Respond
       </Button>
     );
 
@@ -82,7 +83,7 @@ export class ResponseForm extends React.Component<ResponseFormProps, ResponseFor
             <Select
               field="status"
               label="Status"
-              defaultValue={this.props.post.status.toString()}
+              defaultValue={this.state.status}
               options={options}
               onChange={this.setStatus}
             />

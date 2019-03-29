@@ -12,14 +12,28 @@ type Post struct {
 	Title         string        `json:"title"`
 	Slug          string        `json:"slug"`
 	Description   string        `json:"description"`
-	CreatedOn     time.Time     `json:"createdOn"`
+	CreatedAt     time.Time     `json:"createdAt"`
 	User          *User         `json:"user"`
 	HasVoted      bool          `json:"hasVoted"`
-	TotalVotes    int           `json:"totalVotes"`
-	TotalComments int           `json:"totalComments"`
-	Status        int           `json:"status"`
-	Response      *PostResponse `json:"response"`
+	VotesCount    int           `json:"votesCount"`
+	CommentsCount int           `json:"commentsCount"`
+	Status        PostStatus    `json:"status"`
+	Response      *PostResponse `json:"response,omitempty"`
 	Tags          []string      `json:"tags"`
+}
+
+//VoteUser represents a user that voted on a post
+type VoteUser struct {
+	ID        int    `json:"id"`
+	Name      string `json:"name"`
+	Email     string `json:"email,omitempty"`
+	AvatarURL string `json:"avatarURL,omitempty"`
+}
+
+//Vote represents a vote given by a user on a post
+type Vote struct {
+	User      *VoteUser `json:"user"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 // CanBeVoted returns true if this post can have its vote changed
@@ -29,15 +43,17 @@ func (i *Post) CanBeVoted() bool {
 
 // NewPost represents a new post
 type NewPost struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
+	Title       string         `json:"title"`
+	Description string         `json:"description"`
+	Attachments []*ImageUpload `json:"attachments"`
 }
 
 // UpdatePost represents a request to edit an existing post
 type UpdatePost struct {
-	Number      int    `route:"number"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
+	Number      int            `route:"number"`
+	Title       string         `json:"title"`
+	Description string         `json:"description"`
+	Attachments []*ImageUpload `json:"attachments"`
 }
 
 // DeletePost represents a request to delete an existing post
@@ -48,49 +64,58 @@ type DeletePost struct {
 
 // NewComment represents a new comment
 type NewComment struct {
-	Number  int    `route:"number"`
-	Content string `json:"content"`
+	Number      int            `route:"number"`
+	Content     string         `json:"content"`
+	Attachments []*ImageUpload `json:"attachments"`
 }
 
 // EditComment represents a request to edit existing comment
 type EditComment struct {
-	PostNumber int    `route:"number"`
-	ID         int    `route:"id"`
-	Content    string `json:"content"`
+	PostNumber  int            `route:"number"`
+	ID          int            `route:"id"`
+	Content     string         `json:"content"`
+	Attachments []*ImageUpload `json:"attachments"`
+}
+
+// DeleteComment represents a request to delete an existing comment
+type DeleteComment struct {
+	PostNumber int `route:"number"`
+	CommentID  int `route:"id"`
 }
 
 // SetResponse represents the action to update an post response
 type SetResponse struct {
-	Number         int    `route:"number"`
-	Status         int    `json:"status"`
-	Text           string `json:"text"`
-	OriginalNumber int    `json:"originalNumber"`
+	Number         int        `route:"number"`
+	Status         PostStatus `json:"status"`
+	Text           string     `json:"text"`
+	OriginalNumber int        `json:"originalNumber"`
 }
 
 //PostResponse is a staff response to a given post
 type PostResponse struct {
 	Text        string        `json:"text"`
-	RespondedOn time.Time     `json:"respondedOn"`
+	RespondedAt time.Time     `json:"respondedAt"`
 	User        *User         `json:"user"`
 	Original    *OriginalPost `json:"original"`
 }
 
 //OriginalPost holds details of the original post of a duplicate
 type OriginalPost struct {
-	Number int    `json:"number"`
-	Title  string `json:"title"`
-	Slug   string `json:"slug"`
-	Status int    `json:"status"`
+	Number int        `json:"number"`
+	Title  string     `json:"title"`
+	Slug   string     `json:"slug"`
+	Status PostStatus `json:"status"`
 }
 
 //Comment represents an user comment on an post
 type Comment struct {
-	ID        int        `json:"id"`
-	Content   string     `json:"content"`
-	CreatedOn time.Time  `json:"createdOn"`
-	User      *User      `json:"user"`
-	EditedOn  *time.Time `json:"editedOn"`
-	EditedBy  *User      `json:"editedBy"`
+	ID          int        `json:"id"`
+	Content     string     `json:"content"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	User        *User      `json:"user"`
+	Attachments []string   `json:"attachments,omitempty"`
+	EditedAt    *time.Time `json:"editedAt,omitempty"`
+	EditedBy    *User      `json:"editedBy,omitempty"`
 }
 
 //Tag represents a simple tag
@@ -121,43 +146,63 @@ type AssignUnassignTag struct {
 	Number int    `route:"number"`
 }
 
+//PostStatus is the status of a given post
+type PostStatus int
+
 var (
 	//PostOpen is the default status
-	PostOpen = 0
+	PostOpen PostStatus
 	//PostStarted is used when the post has been accepted and work is in progress
-	PostStarted = 1
+	PostStarted PostStatus = 1
 	//PostCompleted is used when the post has been accepted and already implemented
-	PostCompleted = 2
+	PostCompleted PostStatus = 2
 	//PostDeclined is used when organizers decide to decline an post
-	PostDeclined = 3
+	PostDeclined PostStatus = 3
 	//PostPlanned is used when organizers have accepted an post and it's on the roadmap
-	PostPlanned = 4
+	PostPlanned PostStatus = 4
 	//PostDuplicate is used when the post has already been posted before
-	PostDuplicate = 5
+	PostDuplicate PostStatus = 5
 	//PostDeleted is used when the post is completely removed from the site and should never be shown again
-	PostDeleted = 6
+	PostDeleted PostStatus = 6
 )
+var postStatusIDs = map[PostStatus]string{
+	PostOpen:      "open",
+	PostStarted:   "started",
+	PostCompleted: "completed",
+	PostDeclined:  "declined",
+	PostPlanned:   "planned",
+	PostDuplicate: "duplicate",
+	PostDeleted:   "deleted",
+}
 
-// GetPostStatusName returns the name of a post status
-func GetPostStatusName(status int) string {
-	switch status {
-	case PostOpen:
-		return "Open"
-	case PostStarted:
-		return "Started"
-	case PostCompleted:
-		return "Completed"
-	case PostDeclined:
-		return "Declined"
-	case PostPlanned:
-		return "Planned"
-	case PostDuplicate:
-		return "Duplicate"
-	case PostDeleted:
-		return "Deleted"
-	default:
-		return "Unknown"
+var postStatusNames = map[string]PostStatus{
+	"open":      PostOpen,
+	"started":   PostStarted,
+	"completed": PostCompleted,
+	"declined":  PostDeclined,
+	"planned":   PostPlanned,
+	"duplicate": PostDuplicate,
+	"deleted":   PostDeleted,
+}
+
+// MarshalText returns the Text version of the post status
+func (status PostStatus) MarshalText() ([]byte, error) {
+	return []byte(postStatusIDs[status]), nil
+}
+
+// UnmarshalText parse string into a post status
+func (status *PostStatus) UnmarshalText(text []byte) error {
+	*status = postStatusNames[string(text)]
+	return nil
+}
+
+// Name returns the name of a post status
+func (status PostStatus) Name() string {
+	name, ok := postStatusIDs[status]
+	if ok {
+		return name
 	}
+	return "Unknown"
 }
 
 var (
@@ -179,11 +224,11 @@ var (
 
 //NotificationEvent represents all possible notification events
 type NotificationEvent struct {
-	UserSettingsKeyName          string
-	DefaultSettingValue          string
-	RequiresSubscripionUserRoles []Role
-	DefaultEnabledUserRoles      []Role
-	Validate                     func(string) bool
+	UserSettingsKeyName           string
+	DefaultSettingValue           string
+	RequiresSubscriptionUserRoles []Role
+	DefaultEnabledUserRoles       []Role
+	Validate                      func(string) bool
 }
 
 func notificationEventValidation(v string) bool {
@@ -193,9 +238,9 @@ func notificationEventValidation(v string) bool {
 var (
 	//NotificationEventNewPost is triggered when a new post is posted
 	NotificationEventNewPost = NotificationEvent{
-		UserSettingsKeyName:          "event_notification_new_post",
-		DefaultSettingValue:          strconv.Itoa(int(NotificationChannelWeb | NotificationChannelEmail)),
-		RequiresSubscripionUserRoles: []Role{},
+		UserSettingsKeyName:           "event_notification_new_post",
+		DefaultSettingValue:           strconv.Itoa(int(NotificationChannelWeb | NotificationChannelEmail)),
+		RequiresSubscriptionUserRoles: []Role{},
 		DefaultEnabledUserRoles: []Role{
 			RoleAdministrator,
 			RoleCollaborator,
@@ -206,7 +251,7 @@ var (
 	NotificationEventNewComment = NotificationEvent{
 		UserSettingsKeyName: "event_notification_new_comment",
 		DefaultSettingValue: strconv.Itoa(int(NotificationChannelWeb | NotificationChannelEmail)),
-		RequiresSubscripionUserRoles: []Role{
+		RequiresSubscriptionUserRoles: []Role{
 			RoleVisitor,
 		},
 		DefaultEnabledUserRoles: []Role{
@@ -220,7 +265,7 @@ var (
 	NotificationEventChangeStatus = NotificationEvent{
 		UserSettingsKeyName: "event_notification_change_status",
 		DefaultSettingValue: strconv.Itoa(int(NotificationChannelWeb | NotificationChannelEmail)),
-		RequiresSubscripionUserRoles: []Role{
+		RequiresSubscriptionUserRoles: []Role{
 			RoleVisitor,
 		},
 		DefaultEnabledUserRoles: []Role{

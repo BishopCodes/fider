@@ -1,8 +1,9 @@
-import * as React from "react";
+import React from "react";
 import { Post, Tag, CurrentUser } from "@fider/models";
 import { Heading, Loader } from "@fider/components";
 import { ListPosts } from "./ListPosts";
 import { actions } from "@fider/services";
+import { FaRegLightbulb } from "react-icons/fa";
 
 interface SimilarPostsProps {
   title: string;
@@ -42,13 +43,15 @@ export class SimilarPosts extends React.Component<SimilarPostsProps, SimilarPost
   private timer?: number;
   public componentDidUpdate() {
     window.clearTimeout(this.timer);
-    this.timer = window.setTimeout(this.loadSimilarPosts, 200);
+    this.timer = window.setTimeout(this.loadSimilarPosts, 500);
   }
 
   private loadSimilarPosts = () => {
     if (this.state.loading) {
       actions.searchPosts({ query: this.state.title }).then(x => {
-        this.setState({ loading: false, posts: x.data });
+        if (x.ok) {
+          this.setState({ loading: false, posts: x.data });
+        }
       });
     }
   };
@@ -58,8 +61,8 @@ export class SimilarPosts extends React.Component<SimilarPostsProps, SimilarPost
       <>
         <Heading
           title="Similar posts"
-          subtitle="Consider voting on existing posts instead of posting a new one."
-          icon="lightbulb outline"
+          subtitle="Consider voting on existing posts instead."
+          icon={FaRegLightbulb}
           size="small"
           dividing={true}
         />

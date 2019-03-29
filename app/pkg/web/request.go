@@ -2,8 +2,10 @@ package web
 
 import (
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/getfider/fider/app/pkg/errors"
@@ -46,15 +48,7 @@ func WrapRequest(request *http.Request) Request {
 		}
 	}
 
-	clientIP := request.Header.Get("X-Forwarded-For")
-	if clientIP == "" {
-		clientIP = strings.Split(request.RemoteAddr, ":")[0]
-		if clientIP == "" {
-			clientIP = "N/A"
-		}
-	} else {
-		clientIP = strings.Split(clientIP, ",")[0]
-	}
+	clientIP := getClientIP(request)
 
 	return Request{
 		instance:      request,
@@ -65,6 +59,16 @@ func WrapRequest(request *http.Request) Request {
 		URL:           u,
 		IsSecure:      protocol == "https",
 	}
+}
+
+// getClientIP returns the IP of the original requestor.
+func getClientIP(request *http.Request) (clientIP string) {
+	if forwardedHosts := request.Header.Get("X-Forwarded-For"); forwardedHosts != "" {
+		clientIP = strings.Split(forwardedHosts, ",")[0]
+	} else {
+		clientIP, _, _ = net.SplitHostPort(request.RemoteAddr)
+	}
+	return
 }
 
 // GetHeader returns the value of HTTP header from given key
@@ -94,4 +98,11 @@ func (r *Request) AddCookie(cookie *http.Cookie) {
 // IsAPI returns true if its a request for an API resource
 func (r *Request) IsAPI() bool {
 	return strings.HasPrefix(r.URL.Path, "/api/")
+}
+
+var crawlerRegex = regexp.MustCompile("(?i)(baidu)|(msnbot)|(bingbot)|(bingpreview)|(duckduckbot)|(googlebot)|(adsbot-google)|(mediapartners-google)|(slurp)|(yandexbot)|(yandexmetrika)|(ahrefsbot)|(twitterbot)|(slackbot)|(discordbot)|(semrushBot)|(exabot)")
+
+// IsCrawler returns true if the request is coming from a crawler
+func (r *Request) IsCrawler() bool {
+	return crawlerRegex.MatchString(r.GetHeader("User-Agent"))
 }

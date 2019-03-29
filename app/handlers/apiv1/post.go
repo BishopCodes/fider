@@ -4,6 +4,7 @@ import (
 	"github.com/getfider/fider/app/actions"
 	"github.com/getfider/fider/app/models"
 	"github.com/getfider/fider/app/pkg/web"
+	webutil "github.com/getfider/fider/app/pkg/web/util"
 	"github.com/getfider/fider/app/tasks"
 )
 
@@ -11,10 +12,10 @@ import (
 func SearchPosts() web.HandlerFunc {
 	return func(c web.Context) error {
 		posts, err := c.Services().Posts.Search(
-			c.QueryParam("q"),
-			c.QueryParam("f"),
-			c.QueryParam("l"),
-			c.QueryParamAsArray("t"),
+			c.QueryParam("query"),
+			c.QueryParam("view"),
+			c.QueryParam("limit"),
+			c.QueryParamAsArray("tags"),
 		)
 		if err != nil {
 			return c.Failure(err)
@@ -32,7 +33,18 @@ func CreatePost() web.HandlerFunc {
 		}
 
 		posts := c.Services().Posts
+
+		err := webutil.ProcessMultiImageUpload(c, input.Model.Attachments, "attachments")
+		if err != nil {
+			return c.Failure(err)
+		}
+
 		post, err := posts.Add(input.Model.Title, input.Model.Description)
+		if err != nil {
+			return c.Failure(err)
+		}
+
+		err = c.Services().Posts.SetAttachments(post, nil, input.Model.Attachments)
 		if err != nil {
 			return c.Failure(err)
 		}
@@ -42,6 +54,28 @@ func CreatePost() web.HandlerFunc {
 		}
 
 		c.Enqueue(tasks.NotifyAboutNewPost(post))
+
+		return c.Ok(web.Map{
+			"id":     post.ID,
+			"number": post.Number,
+			"title":  post.Title,
+			"slug":   post.Slug,
+		})
+	}
+}
+
+// GetPost retrieves the existing post by number
+func GetPost() web.HandlerFunc {
+	return func(c web.Context) error {
+		number, err := c.ParamAsInt("number")
+		if err != nil {
+			return c.NotFound()
+		}
+
+		post, err := c.Services().Posts.GetByNumber(number)
+		if err != nil {
+			return c.Failure(err)
+		}
 
 		return c.Ok(post)
 	}
@@ -55,7 +89,17 @@ func UpdatePost() web.HandlerFunc {
 			return c.HandleValidation(result)
 		}
 
-		_, err := c.Services().Posts.Update(input.Post, input.Model.Title, input.Model.Description)
+		err := webutil.ProcessMultiImageUpload(c, input.Model.Attachments, "attachments")
+		if err != nil {
+			return c.Failure(err)
+		}
+
+		_, err = c.Services().Posts.Update(input.Post, input.Model.Title, input.Model.Description)
+		if err != nil {
+			return c.Failure(err)
+		}
+
+		err = c.Services().Posts.SetAttachments(input.Post, nil, input.Model.Attachments)
 		if err != nil {
 			return c.Failure(err)
 		}
@@ -106,6 +150,11 @@ func DeletePost() web.HandlerFunc {
 			return c.Failure(err)
 		}
 
+		if input.Model.Text != "" {
+			// Only send notification if user wrote a comment.
+			c.Enqueue(tasks.NotifyAboutDeletedPost(input.Post))
+		}
+
 		return c.Ok(web.Map{})
 	}
 }
@@ -115,7 +164,7 @@ func ListComments() web.HandlerFunc {
 	return func(c web.Context) error {
 		number, err := c.ParamAsInt("number")
 		if err != nil {
-			return c.Failure(err)
+			return c.NotFound()
 		}
 
 		post, err := c.Services().Posts.GetByNumber(number)
@@ -132,6 +181,23 @@ func ListComments() web.HandlerFunc {
 	}
 }
 
+// GetComment returns a single comment by its ID
+func GetComment() web.HandlerFunc {
+	return func(c web.Context) error {
+		id, err := c.ParamAsInt("id")
+		if err != nil {
+			return c.NotFound()
+		}
+
+		comment, err := c.Services().Posts.GetCommentByID(id)
+		if err != nil {
+			return c.Failure(err)
+		}
+
+		return c.Ok(comment)
+	}
+}
+
 // PostComment creates a new comment on given post
 func PostComment() web.HandlerFunc {
 	return func(c web.Context) error {
@@ -140,19 +206,36 @@ func PostComment() web.HandlerFunc {
 			return c.HandleValidation(result)
 		}
 
+		err := webutil.ProcessMultiImageUpload(c, input.Model.Attachments, "attachments")
+		if err != nil {
+			return c.Failure(err)
+		}
+
 		post, err := c.Services().Posts.GetByNumber(input.Model.Number)
 		if err != nil {
 			return c.Failure(err)
 		}
 
-		_, err = c.Services().Posts.AddComment(post, input.Model.Content)
+		id, err := c.Services().Posts.AddComment(post, input.Model.Content)
+		if err != nil {
+			return c.Failure(err)
+		}
+
+		comment, err := c.Services().Posts.GetCommentByID(id)
+		if err != nil {
+			return c.Failure(err)
+		}
+
+		err = c.Services().Posts.SetAttachments(post, comment, input.Model.Attachments)
 		if err != nil {
 			return c.Failure(err)
 		}
 
 		c.Enqueue(tasks.NotifyAboutNewComment(post, input.Model))
 
-		return c.Ok(web.Map{})
+		return c.Ok(web.Map{
+			"id": id,
+		})
 	}
 }
 
@@ -164,7 +247,34 @@ func UpdateComment() web.HandlerFunc {
 			return c.HandleValidation(result)
 		}
 
-		err := c.Services().Posts.UpdateComment(input.Model.ID, input.Model.Content)
+		err := webutil.ProcessMultiImageUpload(c, input.Model.Attachments, "attachments")
+		if err != nil {
+			return c.Failure(err)
+		}
+
+		err = c.Services().Posts.UpdateComment(input.Model.ID, input.Model.Content)
+		if err != nil {
+			return c.Failure(err)
+		}
+
+		err = c.Services().Posts.SetAttachments(input.Post, input.Comment, input.Model.Attachments)
+		if err != nil {
+			return c.Failure(err)
+		}
+
+		return c.Ok(web.Map{})
+	}
+}
+
+// DeleteComment deletes an existing comment by its ID
+func DeleteComment() web.HandlerFunc {
+	return func(c web.Context) error {
+		input := new(actions.DeleteComment)
+		if result := c.BindTo(input); !result.Ok {
+			return c.HandleValidation(result)
+		}
+
+		err := c.Services().Posts.DeleteComment(input.Model.CommentID)
 		if err != nil {
 			return c.Failure(err)
 		}
@@ -201,10 +311,32 @@ func Unsubscribe() web.HandlerFunc {
 	}
 }
 
+// ListVotes returns a list of all votes on given post
+func ListVotes() web.HandlerFunc {
+	return func(c web.Context) error {
+		number, err := c.ParamAsInt("number")
+		if err != nil {
+			return c.NotFound()
+		}
+
+		post, err := c.Services().Posts.GetByNumber(number)
+		if err != nil {
+			return c.Failure(err)
+		}
+
+		votes, err := c.Services().Posts.ListVotes(post, -1)
+		if err != nil {
+			return c.Failure(err)
+		}
+
+		return c.Ok(votes)
+	}
+}
+
 func addOrRemove(c web.Context, addOrRemove func(post *models.Post, user *models.User) error) error {
 	number, err := c.ParamAsInt("number")
 	if err != nil {
-		return c.Failure(err)
+		return c.NotFound()
 	}
 
 	post, err := c.Services().Posts.GetByNumber(number)

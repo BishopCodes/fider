@@ -6,6 +6,11 @@ import (
 	"github.com/getfider/fider/app/models"
 )
 
+// Context holds everything storages need to know about execution context
+type Context interface {
+	TenantAssetsURL(path string, a ...interface{}) string
+}
+
 // Base is a generic storage base interface
 type Base interface {
 	SetCurrentTenant(*models.Tenant)
@@ -19,23 +24,27 @@ type Post interface {
 	GetBySlug(slug string) (*models.Post, error)
 	GetByNumber(number int) (*models.Post, error)
 	GetCommentsByPost(post *models.Post) ([]*models.Comment, error)
-	Search(query, filter, limit string, tags []string) ([]*models.Post, error)
+	Search(query, view, limit string, tags []string) ([]*models.Post, error)
 	GetAll() ([]*models.Post, error)
-	CountPerStatus() (map[int]int, error)
+	CountPerStatus() (map[models.PostStatus]int, error)
 	Add(title, description string) (*models.Post, error)
 	Update(post *models.Post, title, description string) (*models.Post, error)
 	AddComment(post *models.Post, content string) (int, error)
 	GetCommentByID(id int) (*models.Comment, error)
 	UpdateComment(id int, content string) error
+	DeleteComment(id int) error
 	AddVote(post *models.Post, user *models.User) error
 	RemoveVote(post *models.Post, user *models.User) error
 	AddSubscriber(post *models.Post, user *models.User) error
 	RemoveSubscriber(post *models.Post, user *models.User) error
 	GetActiveSubscribers(number int, channel models.NotificationChannel, event models.NotificationEvent) ([]*models.User, error)
-	SetResponse(post *models.Post, text string, status int) error
+	SetResponse(post *models.Post, text string, status models.PostStatus) error
 	MarkAsDuplicate(post *models.Post, original *models.Post) error
 	IsReferenced(post *models.Post) (bool, error)
 	VotedBy() ([]int, error)
+	ListVotes(post *models.Post, limit int) ([]*models.Vote, error)
+	GetAttachments(post *models.Post, comment *models.Comment) ([]string, error)
+	SetAttachments(post *models.Post, comment *models.Comment, attachments []*models.ImageUpload) error
 }
 
 // User is used for user operations
@@ -56,16 +65,21 @@ type User interface {
 	HasSubscribedTo(postID int) (bool, error)
 	GetByAPIKey(apiKey string) (*models.User, error)
 	RegenerateAPIKey() (string, error)
+	Block(userID int) error
+	Unblock(userID int) error
+	Count() (int, error)
 }
 
 // Tenant contains read and write operations for tenants
 type Tenant interface {
 	Base
+	Current() *models.Tenant
 	Add(name string, subdomain string, status int) (*models.Tenant, error)
 	First() (*models.Tenant, error)
 	Activate(id int) error
 	GetByDomain(domain string) (*models.Tenant, error)
 	UpdateSettings(settings *models.UpdateTenantSettings) error
+	UpdateBillingSettings(billing *models.TenantBilling) error
 	UpdateAdvancedSettings(settings *models.UpdateTenantAdvancedSettings) error
 	UpdatePrivacy(settings *models.UpdateTenantPrivacy) error
 	IsSubdomainAvailable(subdomain string) (bool, error)
@@ -73,7 +87,6 @@ type Tenant interface {
 	SaveVerificationKey(key string, duration time.Duration, request models.NewEmailVerification) error
 	FindVerificationByKey(kind models.EmailVerificationKind, key string) (*models.EmailVerification, error)
 	SetKeyAsVerified(key string) error
-	GetUpload(id int) (*models.Upload, error)
 	SaveOAuthConfig(config *models.CreateEditOAuthConfig) error
 	GetOAuthConfigByProvider(provider string) (*models.OAuthConfig, error)
 	ListOAuthConfig() ([]*models.OAuthConfig, error)
@@ -101,4 +114,11 @@ type Notification interface {
 	TotalUnread() (int, error)
 	GetActiveNotifications() ([]*models.Notification, error)
 	GetNotification(id int) (*models.Notification, error)
+}
+
+// Event contains read and write operations for Audit Events
+type Event interface {
+	Base
+	Add(clientIP, name string) (*models.Event, error)
+	GetByID(id int) (*models.Event, error)
 }

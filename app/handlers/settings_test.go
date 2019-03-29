@@ -45,7 +45,7 @@ func TestUpdateUserSettingsHandler_ValidName(t *testing.T) {
 	code, _ := server.
 		OnTenant(mock.DemoTenant).
 		AsUser(mock.JonSnow).
-		ExecutePost(handlers.UpdateUserSettings(), `{ "name": "Jon Stark" }`)
+		ExecutePost(handlers.UpdateUserSettings(), `{ "name": "Jon Stark", "avatarType": "gravatar" }`)
 
 	user, _ := services.Users.GetByEmail("jon.snow@got.com")
 
@@ -62,6 +62,7 @@ func TestUpdateUserSettingsHandler_NewSettings(t *testing.T) {
 		AsUser(mock.JonSnow).
 		ExecutePost(handlers.UpdateUserSettings(), `{ 
 			"name": "Jon Stark",
+			"avatarType": "gravatar",
 			"settings": {
 				"event_notification_new_post": "1",
 				"event_notification_new_comment": "2",
@@ -158,7 +159,7 @@ func TestVerifyChangeEmailKeyHandler_Success(t *testing.T) {
 
 	result, err := services.Tenants.FindVerificationByKey(models.EmailVerificationKindChangeEmail, "th3-s3cr3t")
 	Expect(err).IsNil()
-	Expect(result.VerifiedOn).IsNotNil()
+	Expect(result.VerifiedAt).IsNotNil()
 }
 
 func TestVerifyChangeEmailKeyHandler_DifferentUser(t *testing.T) {

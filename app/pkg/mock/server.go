@@ -45,8 +45,9 @@ func (s *Server) Engine() *web.Engine {
 }
 
 // Use adds a new middleware to pipeline
-func (s *Server) Use(middleware web.MiddlewareFunc) {
+func (s *Server) Use(middleware web.MiddlewareFunc) *Server {
 	s.middleware = append(s.middleware, middleware)
+	return s
 }
 
 // OnTenant set current context tenant
@@ -78,6 +79,12 @@ func (s *Server) AddHeader(name string, value string) *Server {
 // AddCookie add key-value to current context cookies
 func (s *Server) AddCookie(name string, value string) *Server {
 	s.context.Request.AddCookie(&http.Cookie{Name: name, Value: value})
+	return s
+}
+
+// WithClientIP set current ClientIP address
+func (s *Server) WithClientIP(clientIP string) *Server {
+	s.context.Request.ClientIP = clientIP
 	return s
 }
 
